@@ -2,7 +2,7 @@ services:
   # Backend Web Service (TypeScript Express REST API)
   - type: web
     name: bispado-backend
-    env: node
+    runtime: node
     plan: free
     rootDir: backend
     buildCommand: npm ci && npm run build
@@ -22,10 +22,8 @@ services:
         value: "*"
 
   # Frontend Static Site (React 18 + Vite SPA)
-  - type: web
+  - type: static
     name: bispado-frontend
-    env: static
-    plan: free
     rootDir: frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
