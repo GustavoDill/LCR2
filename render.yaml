@@ -22,8 +22,9 @@ services:
         value: "*"
 
   # Frontend Static Site (React 18 + Vite SPA)
-  - type: static
+  - type: web
     name: bispado-frontend
+    runtime: static
     rootDir: frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
