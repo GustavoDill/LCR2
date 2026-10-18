@@ -17,10 +17,25 @@ router.get('/', authenticate, async (req, res) => {
       aprovacoes[doc.id] = doc.data() as AprovacaoAtividade;
     });
 
-    const atividades: Atividade[] = atvSnap.docs.map(doc => ({
+    let atividades: Atividade[] = atvSnap.docs.map(doc => ({
       ...doc.data(),
       id: doc.id,
     })) as Atividade[];
+
+    // Bispado pode ver todos os tickets. Solicitantes regulares só veem o que eles mesmos solicitaram.
+    const isBishop = req.user?.isBishopric || req.user?.role === 'bispado';
+    if (!isBishop) {
+      const userUid = req.user?.uid;
+      const userEmail = req.user?.email?.toLowerCase();
+      const userName = req.user?.displayName?.toLowerCase();
+
+      atividades = atividades.filter(a => {
+        if (userUid && a.solicitante?.uid === userUid) return true;
+        if (userEmail && a.solicitante?.email && a.solicitante.email.toLowerCase() === userEmail) return true;
+        if (userName && a.responsavel && a.responsavel.toLowerCase() === userName) return true;
+        return false;
+      });
+    }
 
     res.json({ atividades, aprovacoes });
   } catch (error) {
@@ -66,6 +81,17 @@ router.put('/:id', authenticate, requireWrite, async (req, res) => {
 
     if (!snap.exists) {
       return res.status(404).json({ error: 'Atividade não encontrada.' });
+    }
+
+    const isBishop = req.user?.isBishopric || req.user?.role === 'bispado';
+    const atv = snap.data() as Atividade;
+    const isOwner =
+      Boolean(req.user?.uid && atv.solicitante?.uid === req.user.uid) ||
+      Boolean(req.user?.email && atv.solicitante?.email && atv.solicitante.email.toLowerCase() === req.user.email.toLowerCase()) ||
+      Boolean(req.user?.displayName && atv.responsavel && atv.responsavel.toLowerCase() === req.user.displayName.toLowerCase());
+
+    if (!isBishop && !isOwner) {
+      return res.status(403).json({ error: 'Acesso negado. Você só pode alterar solicitações que você mesmo enviou.' });
     }
 
     const updatedData = {
@@ -219,12 +245,28 @@ router.post('/:id/feedback', authenticate, requireWrite, async (req, res) => {
   }
 });
 
-router.delete('/:id', authenticate, requireBishopric, requireWrite, async (req, res) => {
+router.delete('/:id', authenticate, requireWrite, async (req, res) => {
   try {
     const db = getDb();
     const { id } = req.params;
+    const atvRef = db.doc(`atividades/${id}`);
+    const snap = await atvRef.get();
 
-    await db.doc(`atividades/${id}`).delete();
+    if (!snap.exists) {
+      return res.status(404).json({ error: 'Atividade não encontrada.' });
+    }
+
+    const isBishop = req.user?.isBishopric || req.user?.role === 'bispado';
+    const atv = snap.data() as Atividade;
+    const isOwner =
+      Boolean(req.user?.uid && atv.solicitante?.uid === req.user.uid) ||
+      Boolean(req.user?.email && atv.solicitante?.email && atv.solicitante.email.toLowerCase() === req.user.email.toLowerCase());
+
+    if (!isBishop && !isOwner) {
+      return res.status(403).json({ error: 'Acesso negado. Você só pode excluir solicitações que você mesmo enviou.' });
+    }
+
+    await atvRef.delete();
     await db.doc(`aprovacoes/${id}`).delete();
 
     res.json({ success: true, id });

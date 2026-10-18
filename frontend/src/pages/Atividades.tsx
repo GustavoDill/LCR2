@@ -226,7 +226,10 @@ export const Atividades: React.FC = () => {
     return <div className="empty">Carregando atividades da ala…</div>;
   }
 
-  const baseList = filterView === 'meus' ? atividades.filter(isUserSolicitante) : atividades;
+  // Bispado pode ver todos os tickets. Solicitantes regulares veem apenas o que solicitaram.
+  const baseList = isBishopric
+    ? (filterView === 'meus' ? atividades.filter(isUserSolicitante) : atividades)
+    : atividades.filter(isUserSolicitante);
 
   const aguardando = baseList.filter(a => getStatus(a) === 'aguardando');
   const ajustes = baseList.filter(a => getStatus(a) === 'ajustes');
@@ -239,9 +242,11 @@ export const Atividades: React.FC = () => {
     <div className="stack">
       <div className="head">
         <div>
-          <h2>Solicitações de Atividades (Tickets)</h2>
+          <h2>{isBishopric ? 'Solicitações de Atividades (Bispado)' : 'Minhas Solicitações de Atividades'}</h2>
           <p className="sub">
-            As organizações planejam e enviam a atividade para o Bispado aprovar, pedir alterações ou recusar.
+            {isBishopric
+              ? 'Painel de tickets de atividades da ala. O Bispado pode aprovar, pedir alterações ou recusar com justificativa.'
+              : 'Acompanhe o status das atividades que você planejou e enviou para aprovação do Bispado.'}
           </p>
         </div>
         {canWrite && (
@@ -251,27 +256,36 @@ export const Atividades: React.FC = () => {
         )}
       </div>
 
-      {/* Tabs de Filtro: Todos vs Meus Tickets */}
-      <div className="seg" role="tablist">
-        <button
-          type="button"
-          className={filterView === 'todos' ? 'on' : ''}
-          onClick={() => setFilterView('todos')}
-        >
-          <Icon name="checks" /> Todos os Tickets <span className="num" style={{ opacity: 0.7 }}>{atividades.length}</span>
-        </button>
-        <button
-          type="button"
-          className={filterView === 'meus' ? 'on' : ''}
-          onClick={() => setFilterView('meus')}
-        >
-          <Icon name="userplus" /> Minhas Solicitações <span className="num" style={{ opacity: 0.7 }}>{myTicketsCount}</span>
-        </button>
-      </div>
+      {/* Tabs de Filtro: Visíveis para o Bispado */}
+      {isBishopric ? (
+        <div className="seg" role="tablist">
+          <button
+            type="button"
+            className={filterView === 'todos' ? 'on' : ''}
+            onClick={() => setFilterView('todos')}
+          >
+            <Icon name="checks" /> Todos os Tickets <span className="num" style={{ opacity: 0.7 }}>{atividades.length}</span>
+          </button>
+          <button
+            type="button"
+            className={filterView === 'meus' ? 'on' : ''}
+            onClick={() => setFilterView('meus')}
+          >
+            <Icon name="userplus" /> Minhas Solicitações <span className="num" style={{ opacity: 0.7 }}>{myTicketsCount}</span>
+          </button>
+        </div>
+      ) : (
+        <div className="notice" style={{ marginBlock: 8, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>📋</span>
+          <span>Você está visualizando apenas as <b>suas solicitações de atividade</b>. O Bispado receberá e analisará seus tickets.</span>
+        </div>
+      )}
 
-      {filterView === 'meus' && myTicketsCount === 0 && (
+      {baseList.length === 0 && (
         <div className="notice bisp" style={{ marginBlock: 8 }}>
-          Você ainda não possui solicitações de atividades criadas em seu nome. Clique em <b>+ Nova solicitação de atividade</b> para enviar uma ao Bispado.
+          {isBishopric
+            ? 'Nenhuma solicitação de atividade encontrada.'
+            : 'Você ainda não possui solicitações de atividades criadas em seu nome. Clique em "+ Nova solicitação de atividade" para enviar uma proposta ao Bispado.'}
         </div>
       )}
 
