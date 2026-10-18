@@ -36,9 +36,11 @@ export const Atividades: React.FC = () => {
 
   // Decision Modal (Bishopric)
   const [selectedAtv, setSelectedAtv] = useState<Atividade | null>(null);
+  const [customRecipientEmail, setCustomRecipientEmail] = useState('');
   const [decisionComment, setDecisionComment] = useState('');
   const [addToAgenda, setAddToAgenda] = useState(true);
   const [submittingDecision, setSubmittingDecision] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
 
   // Feedback Modal
   const [feedbackAtv, setFeedbackAtv] = useState<Atividade | null>(null);
@@ -76,6 +78,12 @@ export const Atividades: React.FC = () => {
     if (a.solicitante?.email && user.email && a.solicitante.email.toLowerCase() === user.email.toLowerCase()) return true;
     if (a.responsavel && user.displayName && a.responsavel.toLowerCase() === user.displayName.toLowerCase()) return true;
     return false;
+  }
+
+  function openTicket(a: Atividade) {
+    setSelectedAtv(a);
+    setCustomRecipientEmail(a.solicitante?.email || '');
+    setDecisionComment(aprovacoes[a.id]?.comentario || '');
   }
 
   function openNewModal(atvToEdit?: Atividade) {
@@ -179,20 +187,32 @@ export const Atividades: React.FC = () => {
 
     setSubmittingDecision(true);
     try {
-      await api.post(`/atividades/${selectedAtv.id}/decide`, {
+      const res = await api.post<{
+        emailResult?: { success: boolean; error?: string; simulated?: boolean; messageId?: string };
+        recipientEmail?: string;
+      }>(`/atividades/${selectedAtv.id}/decide`, {
         status,
         comentario: decisionComment,
         addToAgenda,
+        emailDestinatario: customRecipientEmail.trim() || undefined,
       });
 
-      const msg =
+      let statusMsg =
         status === 'aprovada'
-          ? 'Atividade aprovada com sucesso! Um e-mail de confirmação foi enviado ao solicitante.'
+          ? 'Atividade aprovada com sucesso!'
           : status === 'ajustes'
-          ? 'Ticket retornado ao solicitante com as instruções de alteração! E-mail enviado.'
-          : 'Atividade reprovada. Um e-mail com a justificativa foi enviado ao solicitante.';
+          ? 'Ticket retornado ao solicitante com as instruções de alteração!'
+          : 'Atividade reprovada com sucesso.';
 
-      alert(msg);
+      if (res.emailResult?.success) {
+        statusMsg += `\n\n✉️ Notificação enviada por e-mail com sucesso para: ${res.recipientEmail || customRecipientEmail}!`;
+      } else if (res.emailResult?.simulated) {
+        statusMsg += '\n\n⚠️ Aviso: O e-mail foi apenas simulado no console do Render (verifique variáveis SMTP_HOST, SMTP_USER e SMTP_PASS).';
+      } else if (res.emailResult && !res.emailResult.success) {
+        statusMsg += `\n\n⚠️ Aviso sobre e-mail: Não foi possível entregar a mensagem (${res.emailResult.error || 'Erro no envio'}). O ticket foi atualizado, mas verifique as configurações no Render.`;
+      }
+
+      alert(statusMsg);
       setSelectedAtv(null);
       setDecisionComment('');
       loadAtividades();
@@ -200,6 +220,25 @@ export const Atividades: React.FC = () => {
       alert(err.message || 'Erro ao registrar decisão');
     } finally {
       setSubmittingDecision(false);
+    }
+  }
+
+  async function handleTestEmail() {
+    const defaultEmail = user?.email || '';
+    const targetEmail = prompt('Digite o e-mail de destino para testar o envio de e-mails pelo Render:', defaultEmail);
+    if (!targetEmail || !targetEmail.trim()) return;
+
+    setTestingEmail(true);
+    try {
+      const res = await api.post<{ success: boolean; message: string }>('/atividades/test-email', {
+        email: targetEmail.trim(),
+      });
+      alert(res.message || 'E-mail de teste enviado com sucesso!');
+    } catch (err: any) {
+      console.error('Erro ao testar e-mail:', err);
+      alert(`Falha no envio de e-mail pelo Render:\n${err.message || 'Erro desconhecido. Verifique os logs no Render.'}`);
+    } finally {
+      setTestingEmail(false);
     }
   }
 
@@ -249,11 +288,24 @@ export const Atividades: React.FC = () => {
               : 'Acompanhe o status das atividades que você planejou e enviou para aprovação do Bispado.'}
           </p>
         </div>
-        {canWrite && (
-          <button type="button" className="btn bisp" onClick={() => openNewModal()}>
-            + Nova solicitação de atividade
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {isBishopric && (
+            <button
+              type="button"
+              className="btn ghost sm"
+              disabled={testingEmail}
+              onClick={handleTestEmail}
+              title="Testar se as credenciais do Gmail configuradas no Render estão funcionando"
+            >
+              {testingEmail ? '⏳ Testando...' : '✉️ Testar E-mail'}
+            </button>
+          )}
+          {canWrite && (
+            <button type="button" className="btn bisp" onClick={() => openNewModal()}>
+              + Nova solicitação de atividade
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tabs de Filtro: Visíveis para o Bispado */}
@@ -304,10 +356,7 @@ export const Atividades: React.FC = () => {
                 key={a.id}
                 type="button"
                 className="act-card st-aguardando"
-                onClick={() => {
-                  setSelectedAtv(a);
-                  setDecisionComment(aprovacoes[a.id]?.comentario || '');
-                }}
+                onClick={() => openTicket(a)}
               >
                 <div className="act-main">
                   <span className="act-t">{a.titulo}</span>
@@ -345,10 +394,7 @@ export const Atividades: React.FC = () => {
                 key={a.id}
                 className="act-card st-ajustes"
                 style={{ flexDirection: 'column', gap: 8 }}
-                onClick={() => {
-                  setSelectedAtv(a);
-                  setDecisionComment(aprovacoes[a.id]?.comentario || '');
-                }}
+                onClick={() => openTicket(a)}
               >
                 <div className="act-main" style={{ width: '100%' }}>
                   <span className="act-t">{a.titulo}</span>
@@ -404,10 +450,7 @@ export const Atividades: React.FC = () => {
                 key={a.id}
                 type="button"
                 className="act-card st-aprovada"
-                onClick={() => {
-                  setSelectedAtv(a);
-                  setDecisionComment(aprovacoes[a.id]?.comentario || '');
-                }}
+                onClick={() => openTicket(a)}
               >
                 <div className="act-main">
                   <span className="act-t">{a.titulo}</span>
@@ -444,10 +487,7 @@ export const Atividades: React.FC = () => {
                 key={a.id}
                 type="button"
                 className="act-card st-recusada"
-                onClick={() => {
-                  setSelectedAtv(a);
-                  setDecisionComment(aprovacoes[a.id]?.comentario || '');
-                }}
+                onClick={() => openTicket(a)}
               >
                 <div className="act-main">
                   <span className="act-t">{a.titulo}</span>
@@ -783,8 +823,29 @@ export const Atividades: React.FC = () => {
               <div style={{ borderTop: '1px solid var(--line)', marginTop: 18, paddingTop: 16 }}>
                 <h4 style={{ margin: '0 0 8px 0', fontSize: '15px' }}>Decisão do Bispado (Ticket)</h4>
                 <p style={{ fontSize: '12px', color: 'var(--muted)', margin: '0 0 10px 0' }}>
-                  ✉️ Ao tomar uma decisão, um e-mail é enviado automaticamente para o solicitante (<b>{selectedAtv.solicitante?.email || 'e-mail do solicitante'}</b>).
+                  ✉️ Ao tomar uma decisão, um e-mail é enviado automaticamente para o solicitante.
                 </p>
+
+                <div className="field" style={{ marginBottom: 12 }}>
+                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>E-mail do Solicitante (Destinatário) *</span>
+                    {!selectedAtv.solicitante?.email && (
+                      <span style={{ fontSize: '11px', color: '#d97706', fontWeight: 600 }}>
+                        ⚠️ Ticket sem e-mail cadastrado
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    type="email"
+                    className="inp"
+                    value={customRecipientEmail}
+                    onChange={e => setCustomRecipientEmail(e.target.value)}
+                    placeholder="ex: solicitante@gmail.com"
+                  />
+                  <span style={{ fontSize: '11.5px', color: 'var(--muted)', marginTop: '2px', display: 'block' }}>
+                    O solicitante receberá a notificação da decisão neste endereço. Você pode confirmar ou alterar caso necessário.
+                  </span>
+                </div>
 
                 <div className="field">
                   <label>Comentário / Motivo / Instruções para o Solicitante</label>

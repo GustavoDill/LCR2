@@ -2,9 +2,32 @@ import { Router } from 'express';
 import { getDb } from '../config/firebase.js';
 import { authenticate, requireWrite, requireBishopric } from '../middlewares/auth.js';
 import { Atividade, AprovacaoAtividade, SolicitanteInfo } from '../types/index.js';
-import { sendActivityDecisionEmail } from '../services/email.js';
+import { sendActivityDecisionEmail, sendTestEmail, SendEmailResult } from '../services/email.js';
 
 const router = Router();
+
+// Test SMTP connection endpoint
+router.post('/test-email', authenticate, requireBishopric, async (req, res) => {
+  try {
+    const targetEmail = req.body.email || req.user?.email;
+    if (!targetEmail) {
+      return res.status(400).json({ error: 'Informe um e-mail para envio do teste.' });
+    }
+
+    const result = await sendTestEmail(targetEmail, req.user?.displayName || 'Membro do Bispado');
+    if (result.success) {
+      res.json({ success: true, message: `E-mail de teste enviado com sucesso para ${targetEmail}!` });
+    } else {
+      res.status(500).json({
+        error: `Falha ao enviar e-mail: ${result.error}`,
+        details: result,
+      });
+    }
+  } catch (err: any) {
+    console.error('Error in test-email:', err);
+    res.status(500).json({ error: err.message || 'Erro inesperado ao testar e-mail.' });
+  }
+});
 
 router.get('/', authenticate, async (req, res) => {
   try {
@@ -188,11 +211,37 @@ router.post('/:id/decide', authenticate, requireBishopric, requireWrite, async (
     await aprovRef.set(decision);
 
     // Send decision email automatically to the solicitante
-    const recipientEmail = atv.solicitante?.email;
-    const recipientName = atv.solicitante?.nome || atv.responsavel || 'Líder';
+    let recipientEmail = req.body.emailDestinatario || atv.solicitante?.email;
+    let recipientName = atv.solicitante?.nome || atv.responsavel || 'Líder';
+
+    // Fallback: search in usuarios if email is not present
+    if (!recipientEmail && atv.responsavel) {
+      try {
+        const usersSnap = await db.collection('usuarios').get();
+        const found = usersSnap.docs.find(d => {
+          const u = d.data();
+          return (
+            (u.displayName && u.displayName.trim().toLowerCase() === atv.responsavel.trim().toLowerCase()) ||
+            (u.cargo && u.cargo.trim().toLowerCase() === atv.responsavel.trim().toLowerCase())
+          );
+        });
+        if (found) {
+          recipientEmail = found.data().email;
+          recipientName = found.data().displayName || atv.responsavel;
+          console.log(`[Atividades] E-mail do solicitante encontrado via fallback de usuários: ${recipientEmail}`);
+        }
+      } catch (fallbackErr) {
+        console.warn('Erro ao buscar e-mail no fallback:', fallbackErr);
+      }
+    }
+
+    let emailResult: SendEmailResult = {
+      success: false,
+      error: 'A atividade não possui e-mail de solicitante cadastrado.',
+    };
 
     if (recipientEmail) {
-      sendActivityDecisionEmail({
+      emailResult = await sendActivityDecisionEmail({
         to: recipientEmail,
         solicitanteNome: recipientName,
         atividadeTitulo: atv.titulo,
@@ -201,14 +250,12 @@ router.post('/:id/decide', authenticate, requireBishopric, requireWrite, async (
         status,
         comentario: decision.comentario,
         decididoPorNome: req.user?.displayName || 'Bispado Ala Bosque',
-      }).catch(err => {
-        console.error('Error sending decision email in background:', err);
       });
     } else {
-      console.log(`[Atividades] Nenhum e-mail de solicitante cadastrado para a atividade ${id}.`);
+      console.warn(`[Atividades] Nenhum e-mail de solicitante cadastrado para a atividade ${id}.`);
     }
 
-    res.json(decision);
+    res.json({ ...decision, emailResult, recipientEmail });
   } catch (error) {
     console.error('Error deciding atividade:', error);
     res.status(500).json({ error: 'Erro ao registrar decisão do bispado.' });
