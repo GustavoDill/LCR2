@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { getDb } from '../config/firebase.js';
 import { authenticate, requireWrite, requireBishopric } from '../middlewares/auth.js';
-import { Atividade, AprovacaoAtividade } from '../types/index.js';
+import { Atividade, AprovacaoAtividade, SolicitanteInfo } from '../types/index.js';
+import { sendActivityDecisionEmail } from '../services/email.js';
 
 const router = Router();
 
@@ -32,8 +33,18 @@ router.post('/', authenticate, requireWrite, async (req, res) => {
   try {
     const db = getDb();
     const now = Date.now();
-    const docData: Omit<Atividade, 'id'> = {
+
+    const solicitante: SolicitanteInfo = {
+      uid: req.user?.uid || 'anon',
+      nome: req.user?.displayName || req.body.responsavel || 'Membro da Ala',
+      email: req.user?.email || '',
+      cargo: req.user?.cargo || (req.user?.isBishopric ? 'Bispado' : 'Líder'),
+      organizacao: req.user?.organizacao || req.body.org || '',
+    };
+
+    const docData: any = {
       ...req.body,
+      solicitante,
       criadoEm: now,
       atualizadoEm: now,
     };
@@ -64,6 +75,24 @@ router.put('/:id', authenticate, requireWrite, async (req, res) => {
     delete updatedData.id;
 
     await docRef.update(updatedData);
+
+    // If this ticket was in 'ajustes', editing and resubmitting moves it back to 'aguardando'
+    try {
+      const aprovRef = db.doc(`aprovacoes/${id}`);
+      const aprovSnap = await aprovRef.get();
+      if (aprovSnap.exists) {
+        const aprovData = aprovSnap.data() as AprovacaoAtividade;
+        if (aprovData?.status === 'ajustes') {
+          await aprovRef.update({
+            status: 'aguardando',
+            decididoEm: Date.now(),
+          });
+        }
+      }
+    } catch (aprovErr) {
+      console.warn('Could not reset aprovacao status to aguardando:', aprovErr);
+    }
+
     res.json({ id, ...snap.data(), ...updatedData });
   } catch (error) {
     console.error('Error updating atividade:', error);
@@ -77,6 +106,16 @@ router.post('/:id/decide', authenticate, requireBishopric, requireWrite, async (
     const db = getDb();
     const { id } = req.params;
     const { status, comentario, addToAgenda } = req.body;
+
+    if (!status || !['aprovada', 'ajustes', 'recusada'].includes(status)) {
+      return res.status(400).json({ error: 'Status de decisão inválido.' });
+    }
+
+    // Comentário obrigatório para ajustes ou recusa
+    if ((status === 'ajustes' || status === 'recusada') && (!comentario || !comentario.trim())) {
+      const motivoNome = status === 'recusada' ? 'o motivo da reprovação' : 'as instruções de alteração';
+      return res.status(400).json({ error: `Por favor, informe ${motivoNome} para o solicitante.` });
+    }
 
     const atvRef = db.doc(`atividades/${id}`);
     const atvSnap = await atvRef.get();
@@ -110,10 +149,39 @@ router.post('/:id/decide', authenticate, requireBishopric, requireWrite, async (
       status,
       comentario: comentario?.trim() || '',
       decididoEm: Date.now(),
+      decididoPor: req.user
+        ? {
+            uid: req.user.uid,
+            nome: req.user.displayName || 'Membro do Bispado',
+            cargo: req.user.cargo,
+          }
+        : undefined,
       agendaId,
     };
 
     await aprovRef.set(decision);
+
+    // Send decision email automatically to the solicitante
+    const recipientEmail = atv.solicitante?.email;
+    const recipientName = atv.solicitante?.nome || atv.responsavel || 'Líder';
+
+    if (recipientEmail) {
+      sendActivityDecisionEmail({
+        to: recipientEmail,
+        solicitanteNome: recipientName,
+        atividadeTitulo: atv.titulo,
+        dataAtividade: atv.data,
+        organizacao: atv.org,
+        status,
+        comentario: decision.comentario,
+        decididoPorNome: req.user?.displayName || 'Bispado Ala Bosque',
+      }).catch(err => {
+        console.error('Error sending decision email in background:', err);
+      });
+    } else {
+      console.log(`[Atividades] Nenhum e-mail de solicitante cadastrado para a atividade ${id}.`);
+    }
+
     res.json(decision);
   } catch (error) {
     console.error('Error deciding atividade:', error);

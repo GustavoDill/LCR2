@@ -215,6 +215,14 @@ export interface AgendaEvento {
 
 export type AtividadeStatus = 'aguardando' | 'aprovada' | 'ajustes' | 'recusada';
 
+export interface SolicitanteInfo {
+  uid: string;
+  nome: string;
+  email: string;
+  cargo?: string;
+  organizacao?: string;
+}
+
 export interface Atividade {
   id: string;
   org: string;
@@ -231,6 +239,7 @@ export interface Atividade {
   capela: 'sim' | 'nao' | 'na';
   responsavel: string;
   telefone?: string;
+  solicitante?: SolicitanteInfo;
   liderExtra?: 'sim' | 'nao';
   liderQuem?: string;
   custo: 'sim' | 'nao';
@@ -257,6 +266,11 @@ export interface AprovacaoAtividade {
   status: AtividadeStatus;
   comentario?: string;
   decididoEm: number;
+  decididoPor?: {
+    uid: string;
+    nome: string;
+    cargo?: string;
+  };
   agendaId?: string | null;
 }
 
