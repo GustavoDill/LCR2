@@ -93,6 +93,11 @@ class MockFirestore {
 export function initFirebase() {
   if (admin.apps.length > 0) {
     dbInstance = admin.firestore();
+    try {
+      dbInstance.settings({ ignoreUndefinedProperties: true });
+    } catch {
+      // settings might already be frozen if called previously
+    }
     authInstance = admin.auth();
     return { db: dbInstance, auth: authInstance, isMock: false };
   }
@@ -132,6 +137,11 @@ export function initFirebase() {
 
   if (credentialFound) {
     dbInstance = admin.firestore();
+    try {
+      dbInstance.settings({ ignoreUndefinedProperties: true });
+    } catch {
+      // settings might already be frozen if called previously
+    }
     authInstance = admin.auth();
     console.log('✅ Firebase Admin SDK connected to live Firestore project.');
     return { db: dbInstance, auth: authInstance, isMock: false };

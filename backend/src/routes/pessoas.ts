@@ -41,7 +41,7 @@ router.post('/', requireWrite, async (req, res) => {
     }
 
     const now = Date.now();
-    const newDoc: Omit<Pessoa, 'id'> = {
+    const newDoc: any = {
       nome: nome.trim(),
       tipo: tipo || 'acomp',
       detalhe: detalhe || '',
@@ -52,10 +52,13 @@ router.post('/', requireWrite, async (req, res) => {
       obs: obs || '',
       status: 'aberto',
       dpasso: 0,
-      cargoRef: cargoRef || undefined,
       criadoEm: now,
       atualizadoEm: now,
     };
+
+    if (cargoRef) {
+      newDoc.cargoRef = cargoRef;
+    }
 
     const docRef = await db.collection('conf/b/pessoas').add(newDoc);
     res.status(201).json({ id: docRef.id, ...newDoc });

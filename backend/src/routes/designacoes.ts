@@ -48,17 +48,20 @@ router.post('/', authenticate, requireWrite, async (req, res) => {
     const targetOrigin: OriginType = (origem === 'bispado' && req.user?.isBishopric) ? 'bispado' : 'conselho';
     const now = Date.now();
 
-    const newDoc: Omit<Designacao, 'id'> = {
+    const newDoc: any = {
       titulo: titulo.trim(),
       responsavel: responsavel?.trim() || '',
       prazo: prazo || '',
       status: (status as TaskStatus) || 'pendente',
       proximo: proximo?.trim() || '',
       origem: targetOrigin,
-      ataId: ataId || undefined,
       criadoEm: now,
       atualizadoEm: now,
     };
+
+    if (ataId) {
+      newDoc.ataId = ataId;
+    }
 
     const docRef = await db.collection(colName(targetOrigin)).add(newDoc);
     res.status(201).json({ id: docRef.id, ...newDoc });

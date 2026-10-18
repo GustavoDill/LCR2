@@ -63,17 +63,19 @@ router.post('/tarefas', authenticate, requireWrite, async (req, res) => {
     }
 
     const now = Date.now();
-    const newDoc: Omit<NatalTarefa, 'id'> = {
+    const newDoc: any = {
       titulo: titulo.trim(),
       area: area || 'Programação',
       status: status || 'pendente',
       responsavel: responsavel || '',
       prazo: prazo || '',
-      antes: antes !== undefined ? Number(antes) : undefined,
       obs: obs || '',
       criadoEm: now,
       atualizadoEm: now,
     };
+    if (antes !== undefined && antes !== null && antes !== '') {
+      newDoc.antes = Number(antes);
+    }
 
     const docRef = await db.collection('natal-tarefas').add(newDoc);
     res.status(201).json({ id: docRef.id, ...newDoc });
@@ -152,17 +154,19 @@ router.post('/tarefas/batch', authenticate, requireWrite, async (req, res) => {
     const created = [];
 
     for (const item of items) {
-      const doc = {
+      const doc: any = {
         titulo: item.titulo,
         area: item.area,
         obs: item.obs || '',
-        antes: item.antes !== undefined ? Number(item.antes) : undefined,
         responsavel: item.responsavel || '',
         prazo: item.prazo || '',
         status: 'pendente',
         criadoEm: now,
         atualizadoEm: now,
       };
+      if (item.antes !== undefined && item.antes !== null && item.antes !== '') {
+        doc.antes = Number(item.antes);
+      }
       const ref = await db.collection('natal-tarefas').add(doc);
       created.push({ id: ref.id, ...doc });
     }
