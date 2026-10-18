@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { getDb } from '../config/firebase.js';
-import { authenticate, requireBishopric, requireWrite } from '../middlewares/auth.js';
+import { authenticate, requirePermission, requireBishopric, requireWrite } from '../middlewares/auth.js';
 import { Organizacao, Cargo, CargoHistorico } from '../types/index.js';
 
 const router = Router();
-router.use(authenticate, requireBishopric);
+router.use(authenticate, requirePermission('chamados'));
 
 const newId = (prefix: string) => prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 

@@ -1,12 +1,34 @@
+export type UserRole = 'bispado' | 'lider_org' | 'conselho';
+
+export interface UserPermissions {
+  inicio?: boolean;
+  reuniao?: boolean;
+  designacoes?: boolean;
+  chamados?: boolean;
+  pessoas?: boolean;
+  membros?: boolean;
+  seminario?: boolean;
+  financeiro?: boolean;
+  agenda?: boolean;
+  atividades?: boolean;
+  natal?: boolean;
+  indicadores?: boolean;
+  atas?: boolean;
+  importar?: boolean;
+  [key: string]: boolean | undefined;
+}
+
 export interface UserProfile {
   uid: string;
   email?: string;
   displayName?: string;
-  role: 'bispado' | 'conselho';
+  name?: string;
+  role: UserRole;
   isBishopric: boolean; // true for Bispado members
   canWrite: boolean;
   cargo?: string;
-  organizacao?: string;
+  organizacao?: string; // ex: 'Sociedade de Socorro', 'Quórum de Élderes', 'Moças', 'Primária', etc.
+  permissoes?: UserPermissions;
   ativo?: boolean;
   criadoEm?: number;
   ultimoAcesso?: number;

@@ -36,7 +36,7 @@ router.get('/users', authenticate, requireBishopric, async (req, res) => {
 // Update a user's role and permissions (Bishopric only)
 router.put('/users/:uid', authenticate, requireBishopric, async (req, res) => {
   const { uid } = req.params;
-  const { role, cargo, organizacao, canWrite, ativo, displayName } = req.body;
+  const { role, cargo, organizacao, permissoes, canWrite, ativo, displayName } = req.body;
 
   try {
     const db = getDb();
@@ -49,11 +49,15 @@ router.put('/users/:uid', authenticate, requireBishopric, async (req, res) => {
       return;
     }
 
-    const isBishop = role === 'bispado';
+    const currentData = doc.data() as any;
+    const targetRole = (role || currentData.role || 'conselho');
+    const isBishop = targetRole === 'bispado';
+
     const updates: Partial<UserProfile> = {
-      ...(role !== undefined && { role: isBishop ? 'bispado' : 'conselho', isBishopric: isBishop }),
+      ...(role !== undefined && { role: targetRole, isBishopric: isBishop }),
       ...(cargo !== undefined && { cargo }),
       ...(organizacao !== undefined && { organizacao }),
+      ...(permissoes !== undefined && { permissoes }),
       ...(canWrite !== undefined && { canWrite: Boolean(canWrite) }),
       ...(ativo !== undefined && { ativo: Boolean(ativo) }),
       ...(displayName !== undefined && { displayName }),

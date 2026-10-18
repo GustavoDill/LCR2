@@ -35,7 +35,22 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
-// Protected Route Guard for Bishopric-only features
+// Protected Route Guard for module permissions
+const PermissionRoute: React.FC<{ modulo: string; children: React.ReactNode }> = ({ modulo, children }) => {
+  const { hasPermission, isBishopric, isLoggedIn, loading } = useAuth();
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: 'var(--color-bg)' }}>
+        <div style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>Carregando sessão...</div>
+      </div>
+    );
+  }
+  if (!isLoggedIn) return <Navigate to="/login" replace />;
+  if (!isBishopric && !hasPermission(modulo)) return <Navigate to="/" replace />;
+  return <>{children}</>;
+};
+
+// Protected Route Guard for Bishopric-only administration
 const BishopricRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isBishopric, isLoggedIn, loading } = useAuth();
   if (loading) {
@@ -69,141 +84,141 @@ export const AppRoutes: React.FC = () => {
       <Route
         path="/designacoes"
         element={
-          <ProtectedRoute>
+          <PermissionRoute modulo="designacoes">
             <Layout>
               <Designacoes />
             </Layout>
-          </ProtectedRoute>
+          </PermissionRoute>
         }
       />
       <Route
         path="/reuniao"
         element={
-          <ProtectedRoute>
+          <PermissionRoute modulo="reuniao">
             <Layout>
               <Reuniao />
             </Layout>
-          </ProtectedRoute>
+          </PermissionRoute>
         }
       />
       <Route
         path="/atas"
         element={
-          <ProtectedRoute>
+          <PermissionRoute modulo="atas">
             <Layout>
               <Atas />
             </Layout>
-          </ProtectedRoute>
+          </PermissionRoute>
         }
       />
       <Route
         path="/chamados-desobrigacoes"
         element={
-          <ProtectedRoute>
+          <PermissionRoute modulo="chamados">
             <Layout>
               <ChamadosDesobrigacoes />
             </Layout>
-          </ProtectedRoute>
+          </PermissionRoute>
         }
       />
       <Route
         path="/chamados"
         element={
-          <ProtectedRoute>
+          <PermissionRoute modulo="chamados">
             <Layout>
               <Chamados />
             </Layout>
-          </ProtectedRoute>
+          </PermissionRoute>
         }
       />
       <Route
         path="/seminario"
         element={
-          <ProtectedRoute>
+          <PermissionRoute modulo="seminario">
             <Layout>
               <Seminario />
             </Layout>
-          </ProtectedRoute>
+          </PermissionRoute>
         }
       />
       <Route
         path="/agenda"
         element={
-          <ProtectedRoute>
+          <PermissionRoute modulo="agenda">
             <Layout>
               <Agenda />
             </Layout>
-          </ProtectedRoute>
+          </PermissionRoute>
         }
       />
       <Route
         path="/atividades"
         element={
-          <ProtectedRoute>
+          <PermissionRoute modulo="atividades">
             <Layout>
               <Atividades />
             </Layout>
-          </ProtectedRoute>
+          </PermissionRoute>
         }
       />
       <Route
         path="/natal"
         element={
-          <ProtectedRoute>
+          <PermissionRoute modulo="natal">
             <Layout>
               <Natal />
             </Layout>
-          </ProtectedRoute>
+          </PermissionRoute>
         }
       />
       <Route
         path="/indicadores"
         element={
-          <ProtectedRoute>
+          <PermissionRoute modulo="indicadores">
             <Layout>
               <Indicadores />
             </Layout>
-          </ProtectedRoute>
+          </PermissionRoute>
         }
       />
-      <Route
-        path="/importar"
-        element={
-          <ProtectedRoute>
-            <Layout>
-              <Importar />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-
-      {/* Bishopric Confidential Routes */}
       <Route
         path="/pessoas"
         element={
-          <BishopricRoute>
+          <PermissionRoute modulo="pessoas">
             <Layout>
               <Pessoas />
             </Layout>
-          </BishopricRoute>
+          </PermissionRoute>
         }
       />
       <Route
         path="/membros"
         element={
-          <BishopricRoute>
+          <PermissionRoute modulo="membros">
             <Layout>
               <Membros />
             </Layout>
-          </BishopricRoute>
+          </PermissionRoute>
         }
       />
       <Route
         path="/financeiro"
         element={
-          <BishopricRoute>
+          <PermissionRoute modulo="financeiro">
             <Layout>
               <Financeiro />
+            </Layout>
+          </PermissionRoute>
+        }
+      />
+
+      {/* Bishopric Confidential Administration */}
+      <Route
+        path="/importar"
+        element={
+          <BishopricRoute>
+            <Layout>
+              <Importar />
             </Layout>
           </BishopricRoute>
         }

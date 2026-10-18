@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { getAuth, getDb, isMockFirebase } from '../config/firebase.js';
-import { UserProfile } from '../types/index.js';
+import { UserProfile, UserRole, UserPermissions } from '../types/index.js';
 
 declare global {
   namespace Express {
@@ -8,6 +8,64 @@ declare global {
       user?: UserProfile;
     }
   }
+}
+
+export function getDefaultPermissions(role: UserRole): UserPermissions {
+  if (role === 'bispado') {
+    return {
+      inicio: true,
+      reuniao: true,
+      designacoes: true,
+      chamados: true,
+      pessoas: true,
+      membros: true,
+      seminario: true,
+      financeiro: true,
+      agenda: true,
+      atividades: true,
+      natal: true,
+      indicadores: true,
+      atas: true,
+      importar: true,
+    };
+  }
+
+  if (role === 'lider_org') {
+    return {
+      inicio: true,
+      reuniao: true,
+      designacoes: true,
+      chamados: true,
+      pessoas: false,
+      membros: true, // Leader can view ward directory / their org
+      seminario: false,
+      financeiro: false,
+      agenda: true,
+      atividades: true,
+      natal: true,
+      indicadores: false,
+      atas: true,
+      importar: false,
+    };
+  }
+
+  // default 'conselho'
+  return {
+    inicio: true,
+    reuniao: true,
+    designacoes: true,
+    chamados: false,
+    pessoas: false,
+    membros: false,
+    seminario: false,
+    financeiro: false,
+    agenda: true,
+    atividades: true,
+    natal: true,
+    indicadores: false,
+    atas: true,
+    importar: false,
+  };
 }
 
 export async function authenticate(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -18,16 +76,22 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     if (devAllowAnonymous || isMockFirebase()) {
       // In dev mode or mock mode, infer role from custom header or default to bishopric
       const requestedRole = (req.headers['x-role'] as string)?.toLowerCase();
-      const isBisp = requestedRole ? requestedRole === 'bishopric' || requestedRole === 'bispado' : true;
+      let role: UserRole = 'bispado';
+      if (requestedRole === 'lider_org') role = 'lider_org';
+      else if (requestedRole === 'conselho' || requestedRole === 'council') role = 'conselho';
+
+      const isBisp = role === 'bispado';
 
       req.user = {
-        uid: isBisp ? 'dev-bishop-001' : 'dev-council-001',
+        uid: isBisp ? 'dev-bishop-001' : role === 'lider_org' ? 'dev-leader-001' : 'dev-council-001',
         email: isBisp ? 'bispo@alabosque.org' : 'lider@alabosque.org',
-        displayName: isBisp ? 'Bispo Ala Bosque' : 'Líder do Conselho',
-        role: isBisp ? 'bispado' : 'conselho',
+        displayName: isBisp ? 'Bispo Ala Bosque' : role === 'lider_org' ? 'Líder da Soc. Socorro' : 'Líder do Conselho',
+        role,
         isBishopric: isBisp,
         canWrite: true,
-        cargo: isBisp ? 'Bispo' : 'Conselheiro',
+        cargo: isBisp ? 'Bispo' : role === 'lider_org' ? 'Pres. Sociedade de Socorro' : 'Conselheiro',
+        organizacao: role === 'lider_org' ? 'Sociedade de Socorro' : undefined,
+        permissoes: getDefaultPermissions(role),
         ativo: true,
         criadoEm: Date.now(),
         ultimoAcesso: Date.now(),
@@ -45,13 +109,13 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     const db = getDb();
 
     if (!auth) {
-      // Fallback dev mode when auth is not initialized
       req.user = {
         uid: 'dev-token-user',
         email: 'lider@alabosque.org',
         role: 'bispado',
         isBishopric: true,
         canWrite: true,
+        permissoes: getDefaultPermissions('bispado'),
         ativo: true,
       };
       return next();
@@ -75,15 +139,21 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
         return;
       }
 
+      const role: UserRole = data.role || (data.isBishopric ? 'bispado' : 'conselho');
+      const isBisp = role === 'bispado' || data.isBishopric === true;
+      const defaultPerms = getDefaultPermissions(role);
+      const permissoes = { ...defaultPerms, ...(data.permissoes || {}) };
+
       profile = {
         uid,
         email: data.email || email,
         displayName: data.displayName || displayName,
-        role: data.role === 'bispado' ? 'bispado' : 'conselho',
-        isBishopric: data.role === 'bispado' || data.isBishopric === true,
+        role,
+        isBishopric: isBisp,
         canWrite: data.canWrite !== false,
-        cargo: data.cargo || (data.role === 'bispado' ? 'Membro do Bispado' : 'Líder do Conselho'),
+        cargo: data.cargo || (isBisp ? 'Membro do Bispado' : role === 'lider_org' ? 'Líder de Organização' : 'Líder do Conselho'),
         organizacao: data.organizacao,
+        permissoes,
         ativo: data.ativo !== false,
         criadoEm: data.criadoEm || Date.now(),
         ultimoAcesso: Date.now(),
@@ -97,9 +167,9 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       const existingSnapshot = await db.collection('usuarios').limit(1).get();
       const isFirstUser = existingSnapshot.empty;
 
-      // First user is automatically assigned as Bishop/Admin
       const isBishop = isFirstUser || email.toLowerCase().includes('bispo');
-      const assignedRole: 'bispado' | 'conselho' = isBishop ? 'bispado' : 'conselho';
+      const assignedRole: UserRole = isBishop ? 'bispado' : 'conselho';
+      const initialPerms = getDefaultPermissions(assignedRole);
 
       profile = {
         uid,
@@ -109,6 +179,7 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
         isBishopric: isBishop,
         canWrite: true,
         cargo: isBishop ? 'Bispo / Administrador' : 'Líder do Conselho',
+        permissoes: initialPerms,
         ativo: true,
         criadoEm: Date.now(),
         ultimoAcesso: Date.now(),
@@ -144,6 +215,29 @@ export function requireBishopric(req: Request, res: Response, next: NextFunction
     return;
   }
   next();
+}
+
+export function requirePermission(modulo: keyof UserPermissions) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      res.status(401).json({ error: 'Usuário não autenticado.' });
+      return;
+    }
+
+    // Bishopric always has full access
+    if (req.user.isBishopric || req.user.role === 'bispado') {
+      return next();
+    }
+
+    // Check fine-grained custom permission
+    if (req.user.permissoes && req.user.permissoes[modulo] === true) {
+      return next();
+    }
+
+    res.status(403).json({
+      error: `Acesso negado. Seu perfil não possui permissão para acessar o módulo de ${modulo}.`,
+    });
+  };
 }
 
 export function requireWrite(req: Request, res: Response, next: NextFunction): void {

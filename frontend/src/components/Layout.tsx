@@ -38,7 +38,7 @@ export const NAV_GROUPS = [
 ];
 
 export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
-  const { isBishopric, user, toggleDevRole, signOut } = useAuth();
+  const { isBishopric, role, user, toggleDevRole, signOut, hasPermission } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [counts, setCounts] = useState({ late: 0, live: 0, atvPend: 0 });
@@ -85,7 +85,13 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
             </svg>
           </div>
           <div className="sb-bt">
-            <small>{isBishopric ? 'Bispado' : 'Conselho da Ala'}</small>
+            <small>
+              {isBishopric
+                ? 'Bispado'
+                : role === 'lider_org'
+                ? `Líder • ${user?.organizacao || 'Organização'}`
+                : 'Conselho da Ala'}
+            </small>
             <h1>Ala Bosque</h1>
           </div>
         </div>
@@ -94,7 +100,7 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
           {NAV_GROUPS.map(group => {
             const available = group.items
               .map(id => TABS.find(t => t.id === id)!)
-              .filter(t => !t.b || isBishopric);
+              .filter(t => !t ? false : isBishopric || hasPermission(t.id));
 
             if (!available.length) return null;
 
@@ -135,16 +141,16 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
             {user?.displayName || user?.email || 'Ala Bosque'}
           </div>
           <div style={{ fontSize: '0.75rem', color: '#9bb1d4', marginTop: 2 }}>
-            {user?.cargo || (isBishopric ? 'Membro do Bispado' : 'Conselho da Ala')}
+            {user?.cargo || (isBishopric ? 'Membro do Bispado' : role === 'lider_org' ? 'Líder de Organização' : 'Conselho da Ala')}
           </div>
           <button
             type="button"
             className="btn ghost sm"
             style={{ marginTop: 8, padding: '4px 6px', fontSize: 11, color: '#9bb1d4' }}
             onClick={toggleDevRole}
-            title="Alternar entre visualização de Bispado e Conselho"
+            title="Alternar entre visualização de Bispado, Líder de Organização e Conselho"
           >
-            Simular: {isBishopric ? 'Bispado (Total)' : 'Conselho (Padrão)'} ⇄
+            Simular: {isBishopric ? 'Bispado (Total)' : role === 'lider_org' ? 'Líder Org' : 'Conselho (Padrão)'} ⇄
           </button>
         </div>
       </aside>
@@ -183,8 +189,11 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
                   {user?.displayName || user?.email || 'Usuário'}
                 </div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end', marginTop: 2 }}>
-                  <span className={`badge ${isBishopric ? 'badge-primary' : 'badge-info'}`} style={{ padding: '1px 5px', fontSize: '0.68rem' }}>
-                    {isBishopric ? 'Bispado' : 'Conselho'}
+                  <span
+                    className={`badge ${isBishopric ? 'badge-primary' : role === 'lider_org' ? 'badge-warning' : 'badge-info'}`}
+                    style={{ padding: '1px 5px', fontSize: '0.68rem' }}
+                  >
+                    {isBishopric ? 'Bispado' : role === 'lider_org' ? (user?.organizacao || 'Líder Org') : 'Conselho'}
                   </span>
                   {user?.cargo && <span style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.cargo}</span>}
                 </div>

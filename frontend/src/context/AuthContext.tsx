@@ -13,7 +13,65 @@ import {
   User,
 } from 'firebase/auth';
 import { setTokenProvider, setRoleOverride, api } from '../api/client';
-import { UserProfile } from '../types';
+import { UserProfile, UserRole, UserPermissions } from '../types';
+
+export function getDefaultPermissions(role: UserRole): UserPermissions {
+  if (role === 'bispado') {
+    return {
+      inicio: true,
+      reuniao: true,
+      designacoes: true,
+      chamados: true,
+      pessoas: true,
+      membros: true,
+      seminario: true,
+      financeiro: true,
+      agenda: true,
+      atividades: true,
+      natal: true,
+      indicadores: true,
+      atas: true,
+      importar: true,
+    };
+  }
+
+  if (role === 'lider_org') {
+    return {
+      inicio: true,
+      reuniao: true,
+      designacoes: true,
+      chamados: true,
+      pessoas: false,
+      membros: true,
+      seminario: false,
+      financeiro: false,
+      agenda: true,
+      atividades: true,
+      natal: true,
+      indicadores: false,
+      atas: true,
+      importar: false,
+    };
+  }
+
+  // default 'conselho'
+  return {
+    inicio: true,
+    reuniao: true,
+    designacoes: true,
+    chamados: false,
+    pessoas: false,
+    membros: false,
+    seminario: false,
+    financeiro: false,
+    agenda: true,
+    atividades: true,
+    natal: true,
+    indicadores: false,
+    atas: true,
+    importar: false,
+  };
+}
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -22,7 +80,8 @@ interface AuthContextType {
   isBishopric: boolean;
   canWrite: boolean;
   isLoggedIn: boolean;
-  role: 'bispado' | 'conselho';
+  role: UserRole;
+  hasPermission: (moduloId: string) => boolean;
   signIn: (email: string, pass: string) => Promise<void>;
   signUp: (email: string, pass: string, name?: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
@@ -30,7 +89,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
-  loginAsDevRole: (targetRole: 'bispado' | 'conselho') => void;
+  loginAsDevRole: (targetRole: UserRole) => void;
   toggleDevRole: () => void;
 }
 
@@ -42,6 +101,7 @@ const AuthContext = createContext<AuthContextType>({
   canWrite: false,
   isLoggedIn: false,
   role: 'conselho',
+  hasPermission: () => false,
   signIn: async () => {},
   signUp: async () => {},
   signInWithGoogle: async () => {},
@@ -80,7 +140,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [devRole, setDevRole] = useState<'bispado' | 'conselho'>('bispado');
+  const [devRole, setDevRole] = useState<UserRole>('bispado');
 
   // Configure token provider for API requests
   useEffect(() => {
@@ -102,7 +162,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const res = await api.get<{ user: UserProfile }>('/api/auth/me');
       if (res && res.user) {
-        return res.user;
+        return {
+          ...res.user,
+          permissoes: res.user.permissoes || getDefaultPermissions(res.user.role),
+        };
       }
     } catch (err) {
       console.warn('Could not fetch server profile, using token claims fallback:', err);
@@ -114,18 +177,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       tokenResult.claims.role === 'bispado' ||
       fUser.email?.toLowerCase().includes('bispo')
     );
+    const resolvedRole: UserRole = isBisp ? 'bispado' : ((tokenResult.claims.role as UserRole) || 'conselho');
 
     return {
       uid: fUser.uid,
       email: fUser.email || undefined,
       displayName: fUser.displayName || fUser.email?.split('@')[0] || 'Usuário',
       name: fUser.displayName || undefined,
-      role: isBisp ? 'bispado' : 'conselho',
-      isBishopric: isBisp,
+      role: resolvedRole,
+      isBishopric: resolvedRole === 'bispado',
       canWrite: true,
-      cargo: isBisp ? 'Membro do Bispado' : 'Líder do Conselho',
+      cargo: resolvedRole === 'bispado' ? 'Membro do Bispado' : resolvedRole === 'lider_org' ? 'Líder de Organização' : 'Líder do Conselho',
+      permissoes: getDefaultPermissions(resolvedRole),
       ativo: true,
     };
+  };
+
+  const hasPermission = (moduloId: string): boolean => {
+    const activeRole = user?.role || devRole;
+    if (user?.isBishopric || activeRole === 'bispado') return true;
+
+    // Check custom overrides first
+    if (user?.permissoes && user.permissoes[moduloId] !== undefined) {
+      return Boolean(user.permissoes[moduloId]);
+    }
+
+    // Alias check for navigation IDs
+    if (moduloId === 'chamdes') {
+      if (user?.permissoes?.chamados !== undefined) return Boolean(user.permissoes.chamados);
+    }
+
+    const defaults = getDefaultPermissions(activeRole);
+    if (moduloId === 'chamdes') return Boolean(defaults.chamados);
+    return Boolean(defaults[moduloId]);
   };
 
   const refreshProfile = async () => {
@@ -213,24 +297,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
   };
 
-  const loginAsDevRole = (targetRole: 'bispado' | 'conselho') => {
+  const loginAsDevRole = (targetRole: UserRole) => {
     setDevRole(targetRole);
     setRoleOverride(targetRole === 'bispado' ? 'bishopric' : 'council');
+    
+    let cargo = 'Líder do Conselho';
+    let org = undefined;
+    if (targetRole === 'bispado') {
+      cargo = 'Bispo';
+    } else if (targetRole === 'lider_org') {
+      cargo = 'Presidente da Sociedade de Socorro';
+      org = 'Sociedade de Socorro';
+    }
+
     setUser({
-      uid: targetRole === 'bispado' ? 'local-bishopric' : 'local-council',
-      email: targetRole === 'bispado' ? 'bispo@alabosque.org' : 'lider@alabosque.org',
-      displayName: targetRole === 'bispado' ? 'Bispo Ala Bosque' : 'Líder do Conselho',
-      name: targetRole === 'bispado' ? 'Bispo Ala Bosque' : 'Líder do Conselho',
+      uid: `local-${targetRole}`,
+      email: `${targetRole}@alabosque.org`,
+      displayName: targetRole === 'bispado' ? 'Bispo Ala Bosque' : targetRole === 'lider_org' ? 'Pres. Sociedade de Socorro' : 'Líder do Conselho',
+      name: targetRole === 'bispado' ? 'Bispo Ala Bosque' : targetRole === 'lider_org' ? 'Pres. Sociedade de Socorro' : 'Líder do Conselho',
       role: targetRole,
       isBishopric: targetRole === 'bispado',
       canWrite: true,
-      cargo: targetRole === 'bispado' ? 'Bispo' : 'Líder do Conselho',
+      cargo,
+      organizacao: org,
+      permissoes: getDefaultPermissions(targetRole),
       ativo: true,
     });
   };
 
   const toggleDevRole = () => {
-    const nextRole = (user?.role || devRole) === 'bispado' ? 'conselho' : 'bispado';
+    const cur = user?.role || devRole;
+    const nextRole: UserRole = cur === 'bispado' ? 'lider_org' : cur === 'lider_org' ? 'conselho' : 'bispado';
     loginAsDevRole(nextRole);
   };
 
@@ -240,10 +337,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         firebaseUser,
         loading,
-        isBishopric: user?.isBishopric ?? false,
+        isBishopric: (user?.isBishopric || (user?.role || devRole) === 'bispado') ?? false,
         canWrite: user?.canWrite ?? false,
         isLoggedIn: !!user,
         role: user?.role ?? devRole,
+        hasPermission,
         signIn,
         signUp,
         signInWithGoogle,

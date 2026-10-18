@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { getDb } from '../config/firebase.js';
-import { authenticate, requireBishopric, requireWrite } from '../middlewares/auth.js';
+import { authenticate, requirePermission, requireBishopric, requireWrite } from '../middlewares/auth.js';
 import { Membro, MembroMeta } from '../types/index.js';
 
 const router = Router();
-router.use(authenticate, requireBishopric);
+router.use(authenticate, requirePermission('membros'));
 
 const norm = (s: any) =>
   String(s == null ? '' : s)
