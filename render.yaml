@@ -15,7 +15,7 @@ services:
       - key: PORT
         value: 10000
       - key: FIREBASE_PROJECT_ID
-        sync: false
+        value: "lcr2-db541"
       - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false
       - key: CORS_ORIGIN
@@ -40,14 +40,14 @@ services:
           name: bispado-backend
           property: host
       - key: VITE_FIREBASE_API_KEY
-        sync: false
+        value: "AIzaSyCz0JizuP4pDB8GWwKWgOu4dOY1LY_C6ik"
       - key: VITE_FIREBASE_AUTH_DOMAIN
-        sync: false
+        value: "lcr2-db541.firebaseapp.com"
       - key: VITE_FIREBASE_PROJECT_ID
-        sync: false
+        value: "lcr2-db541"
       - key: VITE_FIREBASE_STORAGE_BUCKET
-        sync: false
+        value: "lcr2-db541.firebasestorage.app"
       - key: VITE_FIREBASE_MESSAGING_SENDER_ID
-        sync: false
+        value: "339421225596"
       - key: VITE_FIREBASE_APP_ID
-        sync: false
+        value: "1:339421225596:web:2c0a44ce3bff66d6261ff9"

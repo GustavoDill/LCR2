@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeApp, getApps } from 'firebase/app';
 import {
   getAuth,
   onAuthStateChanged,
@@ -53,29 +53,28 @@ const AuthContext = createContext<AuthContextType>({
   toggleDevRole: () => {},
 });
 
-// Firebase Client configuration from environment
+// Firebase Client configuration with environment variables and project defaults
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCz0JizuP4pDB8GWwKWgOu4dOY1LY_C6ik',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'lcr2-db541.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'lcr2-db541',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'lcr2-db541.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '339421225596',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:339421225596:web:2c0a44ce3bff66d6261ff9',
 };
 
-const hasValidFirebaseConfig = Boolean(
-  firebaseConfig.apiKey &&
-  firebaseConfig.apiKey !== 'demo-api-key' &&
-  firebaseConfig.projectId
-);
-
-if (!getApps().length && hasValidFirebaseConfig) {
-  try {
-    initializeApp(firebaseConfig);
-  } catch (err) {
-    console.warn('Firebase client initialization warning:', err);
+function ensureFirebaseInitialized() {
+  if (!getApps().length) {
+    try {
+      initializeApp(firebaseConfig);
+    } catch (err) {
+      console.warn('Firebase initialization error:', err);
+    }
   }
 }
+
+// Initial bootstrap
+ensureFirebaseInitialized();
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
@@ -137,22 +136,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    if (!hasValidFirebaseConfig) {
-      // If no valid Firebase client config, allow dev bypass
-      setUser({
-        uid: 'dev-bishop-001',
-        email: 'bispo@alabosque.org',
-        displayName: 'Bispo Ala Bosque',
-        name: 'Bispo Ala Bosque',
-        role: devRole,
-        isBishopric: devRole === 'bispado',
-        canWrite: true,
-        cargo: devRole === 'bispado' ? 'Bispo' : 'Líder do Conselho',
-      });
-      setLoading(false);
-      return;
-    }
-
+    ensureFirebaseInitialized();
     const auth = getAuth();
     const unsubscribe = onAuthStateChanged(auth, async (fUser) => {
       setFirebaseUser(fUser);
@@ -183,6 +167,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [devRole]);
 
   const signIn = async (email: string, pass: string) => {
+    ensureFirebaseInitialized();
     const auth = getAuth();
     const userCredential = await signInWithEmailAndPassword(auth, email, pass);
     const profile = await fetchUserProfile(userCredential.user);
@@ -190,6 +175,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signUp = async (email: string, pass: string, name?: string) => {
+    ensureFirebaseInitialized();
     const auth = getAuth();
     const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
     if (name) {
@@ -200,6 +186,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signInWithGoogle = async () => {
+    ensureFirebaseInitialized();
     const auth = getAuth();
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
@@ -209,6 +196,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const sendPasswordReset = async (email: string) => {
+    ensureFirebaseInitialized();
     const auth = getAuth();
     await sendPasswordResetEmail(auth, email);
   };
