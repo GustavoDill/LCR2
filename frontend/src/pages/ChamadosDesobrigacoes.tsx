@@ -103,6 +103,23 @@ export const ChamadosDesobrigacoes: React.FC = () => {
     }
   }
 
+  async function handleCancel(id: string, nome?: string, isDesobrigacao?: boolean) {
+    if (!canWrite) return;
+    const itemTipo = isDesobrigacao ? 'a desobrigação' : 'o chamado';
+    const confirmMsg = nome
+      ? `Tem certeza que deseja cancelar ${itemTipo} de "${nome}"?`
+      : `Tem certeza que deseja cancelar ${itemTipo}?`;
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      await api.delete(`/pessoas/${id}`);
+      loadPessoas();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao cancelar');
+    }
+  }
+
   if (!isBishopric) {
     return <div className="notice bisp">Acesso restrito aos membros do Bispado.</div>;
   }
@@ -240,6 +257,14 @@ export const ChamadosDesobrigacoes: React.FC = () => {
                             >
                               → {nextStageLabel}
                             </button>
+                            <button
+                              type="button"
+                              className="btn ghost sm danger"
+                              onClick={() => handleCancel(p.id, p.nome, false)}
+                              title="Cancelar chamado"
+                            >
+                              Cancelar chamado
+                            </button>
                           </div>
                         )}
                       </article>
@@ -288,6 +313,14 @@ export const ChamadosDesobrigacoes: React.FC = () => {
                         >
                           {nextStepLabel}
                         </button>
+                        <button
+                          type="button"
+                          className="btn ghost sm danger"
+                          onClick={() => handleCancel(p.id, p.nome, true)}
+                          title="Cancelar desobrigação"
+                        >
+                          Cancelar
+                        </button>
                       </div>
                     )}
                   </div>
@@ -319,13 +352,23 @@ export const ChamadosDesobrigacoes: React.FC = () => {
                       {isDes(p) ? 'Desobrigação' : 'Chamado'}
                     </span>
                     {canWrite && (
-                      <button
-                        type="button"
-                        className="btn ghost sm"
-                        onClick={() => handleReopen(p.id)}
-                      >
-                        Reabrir
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          className="btn ghost sm"
+                          onClick={() => handleReopen(p.id)}
+                        >
+                          Reabrir
+                        </button>
+                        <button
+                          type="button"
+                          className="btn ghost sm danger"
+                          onClick={() => handleCancel(p.id, p.nome, isDes(p))}
+                          title="Excluir do histórico"
+                        >
+                          Excluir
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>

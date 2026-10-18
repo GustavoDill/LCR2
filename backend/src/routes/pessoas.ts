@@ -231,7 +231,33 @@ router.delete('/:id', requireWrite, async (req, res) => {
   try {
     const db = getDb();
     const { id } = req.params;
-    await db.doc(`conf/b/pessoas/${id}`).delete();
+    const docRef = db.doc(`conf/b/pessoas/${id}`);
+    const snap = await docRef.get();
+
+    if (snap.exists) {
+      const p = snap.data() as Pessoa;
+      // If linked to an organization cargo pending swap, clean up the pending state
+      if (p.cargoRef?.org && p.cargoRef?.cargo) {
+        try {
+          const orgRef = db.doc(`conf/b/chamados/${p.cargoRef.org}`);
+          const orgSnap = await orgRef.get();
+          if (orgSnap.exists) {
+            const orgData = orgSnap.data();
+            const cargos = (orgData?.cargos || []).map((c: any) => {
+              if (c.id === p.cargoRef!.cargo && (c.pendente?.pid === id || !c.pendente?.pid)) {
+                return { ...c, pendente: null };
+              }
+              return c;
+            });
+            await orgRef.update({ cargos });
+          }
+        } catch (orgErr) {
+          console.error('Error clearing pending calling from organization:', orgErr);
+        }
+      }
+      await docRef.delete();
+    }
+
     res.json({ success: true, id });
   } catch (error) {
     console.error('Error deleting pessoa:', error);

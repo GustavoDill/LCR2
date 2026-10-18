@@ -748,6 +748,15 @@ body.sb-collapsed .sb .sb-item {
   background: var(--surface-2);
 }
 
+.btn.ghost.danger {
+  color: var(--crit);
+}
+
+.btn.ghost.danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--crit);
+}
+
 .btn.sm {
   padding: 5px 10px;
   font-size: 13px;

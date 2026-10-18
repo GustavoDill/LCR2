@@ -286,6 +286,15 @@ router.post('/organizacoes/:orgId/cargos/:cargoId/cancel-pending', requireWrite,
       return res.status(404).json({ error: 'Chamado não encontrado.' });
     }
 
+    // Also delete linked tracking person from conf/b/pessoas if present
+    if (targetCargo.pendente?.pid) {
+      try {
+        await db.doc(`conf/b/pessoas/${targetCargo.pendente.pid}`).delete();
+      } catch (err) {
+        console.error('Error deleting linked pessoa in cancel-pending:', err);
+      }
+    }
+
     const updatedCargo: Cargo = {
       ...targetCargo,
       pendente: null,
