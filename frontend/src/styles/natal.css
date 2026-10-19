@@ -1,0 +1,203 @@
+/* Festa de Natal */
+.xmas-hero {
+  border-radius: 14px;
+  padding: 18px 20px;
+  color: #fff;
+  background: linear-gradient(135deg, #7f1d1d, #b91c1c 55%, #166534);
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+  box-shadow: var(--shadow);
+}
+
+.xmas-hero h3 {
+  font-size: 22px;
+  margin: 0;
+  color: #fff;
+}
+
+.xmas-hero .xm {
+  display: flex;
+  gap: 6px 16px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  opacity: 0.95;
+  margin-top: 6px;
+}
+
+.xmas-cd {
+  text-align: center;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 10px 16px;
+  min-width: 110px;
+}
+
+.xmas-cd b {
+  display: block;
+  font-family: var(--f-display);
+  font-size: 34px;
+  line-height: 1;
+}
+
+.xmas-cd span {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.xmas-banner {
+  position: relative;
+  height: 230px;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  background: #0b1430;
+}
+
+.xmas-banner svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.xb-txt {
+  position: absolute;
+  z-index: 2;
+  left: 24px;
+  top: 20px;
+  max-width: 60%;
+  color: #fff;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.55);
+}
+
+.xb-txt h2 {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 44px;
+  line-height: 1.05;
+  color: #fff;
+  letter-spacing: 0.5px;
+}
+
+.xb-txt p {
+  margin: 6px 0 0;
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-size: 15px;
+  opacity: 0.95;
+  max-width: 320px;
+}
+
+.area {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.area-h {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0 6px;
+  border-bottom: 2px solid var(--line);
+}
+
+.area-h h4 {
+  margin: 0;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.area-h .prog {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.area-h .prog s {
+  display: inline-block;
+  width: 80px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  position: relative;
+  overflow: hidden;
+  text-decoration: none;
+}
+
+.area-h .prog s i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--s-exc);
+}
+
+.tk {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.tk input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  accent-color: var(--s-exc);
+  flex: none;
+  cursor: pointer;
+}
+
+.tk.done .tk-t {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.tk-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.tk-t {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.tk-m {
+  display: flex;
+  gap: 4px 10px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.tk-m .bad {
+  color: var(--s-crit);
+  font-weight: 600;
+}
+
+.idea {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.idea p {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
