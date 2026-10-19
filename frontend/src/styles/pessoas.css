@@ -1,0 +1,49 @@
+/* Pessoas */
+.pgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  gap: 12px;
+}
+
+.pcard {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pcard.done {
+  opacity: 0.65;
+}
+
+.pcard .nm {
+  font-weight: 700;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.pcard .nx {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.pcard .ob {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.pcard .ft {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}

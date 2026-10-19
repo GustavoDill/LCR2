@@ -1,0 +1,39 @@
+/* Atas */
+.ata {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ata-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.ata-sec h4 {
+  margin: 0;
+  font-size: 15px;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.ata-sec .tx {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 70ch;
+}
+
+.copybox {
+  width: 100%;
+  min-height: 160px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+}

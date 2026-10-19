@@ -1,0 +1,34 @@
+/* Agenda */
+.month-h {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 14px 0 4px;
+}
+
+.dateb {
+  flex: none;
+  width: 48px;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 0;
+  background: var(--surface-2);
+}
+
+.dateb .d {
+  font-family: var(--f-display);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.dateb .w {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
