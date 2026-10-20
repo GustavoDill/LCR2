@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Membro, MembroMeta } from '../types';
+import { parseMembersHtml } from '../utils/membersParser';
 
 export const Membros: React.FC = () => {
   const { isBishopric, canWrite } = useAuth();
@@ -116,38 +117,65 @@ export const Membros: React.FC = () => {
     }
   }
 
-  // Raw text or pasted TSV/CSV simple parser
+  function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      if (content) {
+        setPasteData(content);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // Raw text, TSV/CSV or HTML parser
   async function handleImportSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!pasteData.trim()) return alert('Cole os dados no campo indicado.');
+    if (!pasteData.trim()) return alert('Selecione um arquivo ou cole os dados.');
 
     setImporting(true);
     try {
-      const lines = pasteData.trim().split('\n');
-      const delimiter = lines[0].includes('\t') ? '\t' : lines[0].includes(';') ? ';' : ',';
+      let parsedRecords: any[] = [];
 
-      const parsedRecords = lines
-        .map(line => {
-          const cols = line.split(delimiter).map(c => c.trim().replace(/^"|"$/g, ''));
-          let nome = cols[0] || '';
-          if (flipNames && nome.includes(',')) {
-            const parts = nome.split(',');
-            if (parts.length === 2) nome = `${parts[1].trim()} ${parts[0].trim()}`;
-          }
-          if (!nome || nome.toLowerCase() === 'nome') return null;
+      // Check if user pasted/loaded HTML from LCR
+      if (pasteData.includes('<tr') || pasteData.includes('cloned-column-header') || pasteData.includes('<table')) {
+        parsedRecords = parseMembersHtml(pasteData);
+      } else {
+        const lines = pasteData.trim().split('\n');
+        const delimiter = lines[0].includes('\t') ? '\t' : lines[0].includes(';') ? ';' : ',';
 
-          return {
-            nome,
-            sexo: cols[1]?.startsWith('M') ? 'M' : cols[1]?.startsWith('F') ? 'F' : '',
-            nascimento: cols[2] || '',
-            telefone: cols[3] || '',
-            chamado: cols[4] || '',
-          };
-        })
-        .filter(Boolean);
+        // Check if header row is present
+        const hasHeader = lines[0].toLowerCase().includes('nome');
+        const dataLines = hasHeader ? lines.slice(1) : lines;
+
+        parsedRecords = dataLines
+          .map(line => {
+            const cols = line.split(delimiter).map(c => c.trim().replace(/^"|"$/g, ''));
+            let nome = cols[0] || '';
+            if (flipNames && nome.includes(',')) {
+              const parts = nome.split(',');
+              if (parts.length === 2) nome = `${parts[1].trim()} ${parts[0].trim()}`;
+            }
+            if (!nome || nome.toLowerCase() === 'nome') return null;
+
+            return {
+              nome,
+              sexo: cols[1]?.startsWith('M') ? 'M' : cols[1]?.startsWith('F') ? 'F' : '',
+              nascimento: cols[2] || '',
+              telefone: cols[3] || '',
+              email: cols[4] && cols[4].includes('@') ? cols[4] : '',
+              chamado: cols[4] && !cols[4].includes('@') ? cols[4] : '',
+              idade: cols[5] ? Number(cols[5]) : undefined,
+              nomeOriginal: cols[6] || undefined,
+            };
+          })
+          .filter(Boolean);
+      }
 
       if (!parsedRecords.length) {
-        alert('Nenhum registro válido encontrado. Verifique o formato das colunas.');
+        alert('Nenhum registro válido encontrado. Verifique o formato do arquivo.');
         setImporting(false);
         return;
       }
@@ -315,11 +343,32 @@ export const Membros: React.FC = () => {
               return (
                 <div key={m.id} className="row">
                   <div className="row-main">
-                    <div className="row-t">{m.nome}</div>
+                    <div className="row-t" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span>{m.nome}</span>
+                      {m.nomeOriginal && m.nomeOriginal !== m.nome && (
+                        <span style={{ color: 'var(--muted)', fontSize: '11.5px', fontWeight: 'normal' }}>
+                          ({m.nomeOriginal})
+                        </span>
+                      )}
+                    </div>
                     <div className="row-m">
                       {age != null && <span>{age} anos</span>}
                       {m.sexo && <span>{m.sexo === 'M' ? 'Masculino' : 'Feminino'}</span>}
-                      {m.telefone && <span>{m.telefone}</span>}
+                      {m.nascimento && <span>📅 {m.nascimento}</span>}
+                      {m.telefone && (
+                        <span>
+                          <a href={`tel:${m.telefone}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                            📞 {m.telefone}
+                          </a>
+                        </span>
+                      )}
+                      {m.email && (
+                        <span>
+                          <a href={`mailto:${m.email}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                            ✉️ {m.email}
+                          </a>
+                        </span>
+                      )}
                       <span>{m.chamado ? m.chamado : 'Sem chamado'}</span>
                     </div>
                   </div>
@@ -478,18 +527,28 @@ export const Membros: React.FC = () => {
           <div className="sheet wide" onClick={e => e.stopPropagation()}>
             <h3>Importar lista de membros</h3>
             <p className="sub" style={{ marginTop: -8 }}>
-              Exporte a lista do LCR em CSV ou copie as linhas no Excel e cole abaixo. Colunas esperadas: Nome, Sexo, Nascimento, Telefone, Chamado.
+              Suporta arquivos <b>Members.html</b> do LCR, planilhas CSV ou linhas copiadas do Excel (TSV).
             </p>
 
             <form onSubmit={handleImportSubmit} className="form" style={{ marginTop: 12 }}>
               <div className="field">
-                <label>Cole os dados da planilha aqui</label>
+                <label>Carregar arquivo do computador (HTML, CSV ou TSV)</label>
+                <input
+                  type="file"
+                  accept=".html,.htm,.csv,.tsv,.txt"
+                  className="inp"
+                  onChange={handleFileSelected}
+                />
+              </div>
+
+              <div className="field">
+                <label>Ou cole os dados diretamente aqui</label>
                 <textarea
                   className="inp"
-                  style={{ minHeight: 180, fontFamily: 'monospace', fontSize: 13 }}
+                  style={{ minHeight: 140, fontFamily: 'monospace', fontSize: 12.5 }}
                   value={pasteData}
                   onChange={e => setPasteData(e.target.value)}
-                  placeholder="João Silva&#9;M&#9;1990-05-12&#9;(54) 99999-9999&#9;Secretário"
+                  placeholder="Cole aqui o conteúdo de Members.html ou linhas copiadas do Excel/CSV..."
                   required
                 />
               </div>

@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { Organizacao, Cargo } from '../types';
+import { Organizacao, Cargo, Membro } from '../types';
 
 export const Chamados: React.FC = () => {
   const { isBishopric, canWrite } = useAuth();
   const [orgs, setOrgs] = useState<Organizacao[]>([]);
+  const [members, setMembers] = useState<Membro[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState<'todos' | 'vagos' | 'troca'>('todos');
   const [searchQuery, setSearchQuery] = useState('');
@@ -19,6 +20,7 @@ export const Chamados: React.FC = () => {
 
   // Swap form states
   const [swapNome, setSwapNome] = useState('');
+  const [swapFilterText, setSwapFilterText] = useState('');
   const [swapModo, setSwapModo] = useState<'agora' | 'processo'>('agora');
   const [swapData, setSwapData] = useState(new Date().toISOString().split('T')[0]);
   const [swapTitulo, setSwapTitulo] = useState('');
@@ -27,14 +29,54 @@ export const Chamados: React.FC = () => {
   // Add cargo states
   const [newCargoTitulo, setNewCargoTitulo] = useState('');
   const [newCargoPessoa, setNewCargoPessoa] = useState('');
+  const [newCargoFilterText, setNewCargoFilterText] = useState('');
 
   // Add org states
   const [newOrgNome, setNewOrgNome] = useState('');
   const [newOrgGrupo, setNewOrgGrupo] = useState('Organizações da ala');
 
+  // Load data
   useEffect(() => {
     loadOrgs();
+    loadMembers();
   }, [isBishopric]);
+
+  // All useMemo hooks placed at the top level
+  const memberCallingsMap = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    orgs.forEach(org => {
+      org.cargos.forEach(c => {
+        if (c.pessoa) {
+          const k = c.pessoa.toLowerCase().trim();
+          if (!map[k]) map[k] = [];
+          map[k].push(`${c.titulo} (${org.nome})`);
+        }
+      });
+    });
+    return map;
+  }, [orgs]);
+
+  const filteredMembersForSwap = useMemo(() => {
+    const q = swapFilterText.trim().toLowerCase();
+    if (!q) return members;
+    return members.filter(
+      m => m.nome.toLowerCase().includes(q) || (m.nomeOriginal && m.nomeOriginal.toLowerCase().includes(q))
+    );
+  }, [swapFilterText, members]);
+
+  const filteredMembersForNewCargo = useMemo(() => {
+    const q = newCargoFilterText.trim().toLowerCase();
+    if (!q) return members;
+    return members.filter(
+      m => m.nome.toLowerCase().includes(q) || (m.nomeOriginal && m.nomeOriginal.toLowerCase().includes(q))
+    );
+  }, [newCargoFilterText, members]);
+
+  const allCargos = useMemo(() => orgs.flatMap(g => g.cargos.map(c => ({ g, c }))), [orgs]);
+  const totalCargos = useMemo(() => allCargos.filter(x => !x.c.fixo).length, [allCargos]);
+  const preenchidos = useMemo(() => allCargos.filter(x => !x.c.fixo && x.c.pessoa).length, [allCargos]);
+  const vagos = useMemo(() => totalCargos - preenchidos, [totalCargos, preenchidos]);
+  const trocas = useMemo(() => allCargos.filter(x => x.c.pendente).length, [allCargos]);
 
   async function loadOrgs() {
     try {
@@ -47,10 +89,20 @@ export const Chamados: React.FC = () => {
     }
   }
 
+  async function loadMembers() {
+    try {
+      const res = await api.get<{ members: Membro[] }>('/membros');
+      setMembers(res.members || []);
+    } catch (err) {
+      console.debug('Membros não puderam ser carregados:', err);
+    }
+  }
+
   function openSwapModal(org: Organizacao, cargo: Cargo) {
     setActiveOrg(org);
     setActiveCargo(cargo);
-    setSwapNome('');
+    setSwapNome(cargo.pessoa || '');
+    setSwapFilterText('');
     setSwapModo('agora');
     setSwapData(new Date().toISOString().split('T')[0]);
     setSwapTitulo(cargo.titulo);
@@ -58,11 +110,35 @@ export const Chamados: React.FC = () => {
     setIsSwapModalOpen(true);
   }
 
+  function openAddCargoModal(org: Organizacao) {
+    setActiveOrg(org);
+    setNewCargoTitulo('');
+    setNewCargoPessoa('');
+    setNewCargoFilterText('');
+    setIsAddCargoModalOpen(true);
+  }
+
   async function handleSwapSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!activeOrg || !activeCargo) return;
-    if (!swapNome.trim() && swapTitulo === activeCargo.titulo) {
-      return alert('Informe o nome de quem vai servir neste chamado.');
+
+    // If "(Nenhum)" is selected (empty string)
+    if (!swapNome.trim()) {
+      if (activeCargo.pessoa) {
+        try {
+          await api.post(`/chamados/organizacoes/${activeOrg.id}/cargos/${activeCargo.id}/vagar`, {
+            data: swapData,
+          });
+          setIsSwapModalOpen(false);
+          loadOrgs();
+        } catch (err: any) {
+          alert(err.message || 'Erro ao deixar chamado vago');
+        }
+        return;
+      } else {
+        setIsSwapModalOpen(false);
+        return;
+      }
     }
 
     try {
@@ -111,8 +187,8 @@ export const Chamados: React.FC = () => {
 
     try {
       await api.post(`/chamados/organizacoes/${activeOrg.id}/cargos`, {
-        titulo: newCargoTitulo,
-        pessoa: newCargoPessoa,
+        titulo: newCargoTitulo.trim(),
+        pessoa: newCargoPessoa.trim(),
         desde: newCargoPessoa ? new Date().toISOString().split('T')[0] : '',
       });
       setIsAddCargoModalOpen(false);
@@ -130,8 +206,10 @@ export const Chamados: React.FC = () => {
 
     try {
       await api.post('/chamados/organizacoes', {
-        nome: newOrgNome,
+        nome: newOrgNome.trim(),
         grupo: newOrgGrupo,
+        ordem: orgs.length + 1,
+        cargos: [],
       });
       setIsAddOrgModalOpen(false);
       setNewOrgNome('');
@@ -140,20 +218,6 @@ export const Chamados: React.FC = () => {
       alert(err.message || 'Erro ao criar organização');
     }
   }
-
-  if (!isBishopric) {
-    return <div className="notice bisp">Acesso restrito aos membros do Bispado.</div>;
-  }
-
-  if (loading) {
-    return <div className="empty">Carregando lista de chamados…</div>;
-  }
-
-  const allCargos = orgs.flatMap(g => g.cargos.map(c => ({ g, c })));
-  const totalCargos = allCargos.filter(x => !x.c.fixo).length;
-  const preenchidos = allCargos.filter(x => !x.c.fixo && x.c.pessoa).length;
-  const vagos = totalCargos - preenchidos;
-  const trocas = allCargos.filter(x => x.c.pendente).length;
 
   const q = searchQuery.toLowerCase().trim();
   const matchFilter = (c: Cargo, g: Organizacao) => {
@@ -165,6 +229,15 @@ export const Chamados: React.FC = () => {
     }
     return true;
   };
+
+  // Conditional early returns placed safely AFTER all hooks
+  if (!isBishopric) {
+    return <div className="notice bisp">Acesso restrito aos membros do Bispado.</div>;
+  }
+
+  if (loading) {
+    return <div className="empty">Carregando lista de chamados…</div>;
+  }
 
   return (
     <div className="stack">
@@ -241,7 +314,6 @@ export const Chamados: React.FC = () => {
           if (!matchingCargos.length && (filterType !== 'todos' || searchQuery)) return null;
 
           const fill = org.cargos.filter(c => c.pessoa).length;
-          const pct = org.cargos.length ? (fill / org.cargos.length) * 100 : 0;
 
           return (
             <section key={org.id} className="card ch-org">
@@ -250,66 +322,62 @@ export const Chamados: React.FC = () => {
                 <span className="row-m num">{fill} de {org.cargos.length}</span>
               </div>
 
-              <div className="ch-prog">
-                <i style={{ width: `${pct}%` }} />
+              <div className="list">
+                {matchingCargos.map(cargo => {
+                  const isVago = !cargo.pessoa && !cargo.fixo;
+                  return (
+                    <div key={cargo.id} className={`ch-row ${isVago ? 'vago' : ''}`}>
+                      <div className="ch-main">
+                        <div className="ch-t">{cargo.titulo}</div>
+                        <div className="ch-p">
+                          {cargo.pessoa ? (
+                            <span>{cargo.pessoa}</span>
+                          ) : (
+                            <span className="ch-vago-tag">Vago</span>
+                          )}
+                          {cargo.desde && <span className="ch-desde">desde {cargo.desde}</span>}
+                        </div>
+
+                        {cargo.pendente && (
+                          <div className="ch-pend">
+                            <span>
+                              <b>Em processo:</b> {cargo.pendente.pessoa} ({cargo.pendente.etapa || 'proposta'})
+                            </span>
+                            {canWrite && (
+                              <button
+                                type="button"
+                                className="btn sm ok"
+                                onClick={() => handleApplyPending(org.id, cargo.id)}
+                              >
+                                Concluir apoio
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {canWrite && !cargo.fixo && (
+                        <div className="acts">
+                          <button
+                            type="button"
+                            className="btn sm"
+                            onClick={() => openSwapModal(org, cargo)}
+                          >
+                            {!cargo.pessoa ? 'Preencher' : 'Trocar'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-
-              {matchingCargos.map(cargo => {
-                const isVago = !cargo.pessoa;
-                return (
-                  <div key={cargo.id} className={`ch-row ${isVago ? 'vago' : ''}`}>
-                    <div className="ch-main">
-                      <span className="ch-t">{cargo.titulo}</span>
-                      <span className="ch-p">{isVago ? 'Vago' : cargo.pessoa}</span>
-                      {cargo.pendente && (
-                        <span className="ch-pend">
-                          Em troca → {cargo.pendente.pessoa}
-                        </span>
-                      )}
-                      {cargo.desde && !isVago && (
-                        <span className="ch-d">desde {cargo.desde}</span>
-                      )}
-                    </div>
-
-                    <div className="ch-acts">
-                      {cargo.fixo ? (
-                        <span className="row-m">Presidido pelo bispo</span>
-                      ) : (
-                        <>
-                          {cargo.pendente && canWrite && (
-                            <button
-                              type="button"
-                              className="btn sm cons"
-                              onClick={() => handleApplyPending(org.id, cargo.id)}
-                            >
-                              Concluir
-                            </button>
-                          )}
-                          {canWrite && (
-                            <button
-                              type="button"
-                              className={`btn sm ${isVago ? 'bisp' : ''}`}
-                              onClick={() => openSwapModal(org, cargo)}
-                            >
-                              {isVago ? 'Preencher' : 'Trocar'}
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
 
               {canWrite && (
                 <button
                   type="button"
                   className="btn ghost sm"
                   style={{ alignSelf: 'flex-start', marginTop: 8 }}
-                  onClick={() => {
-                    setActiveOrg(org);
-                    setIsAddCargoModalOpen(true);
-                  }}
+                  onClick={() => openAddCargoModal(org)}
                 >
                   + Chamado
                 </button>
@@ -330,13 +398,68 @@ export const Chamados: React.FC = () => {
 
             <form onSubmit={handleSwapSubmit} className="form">
               <div className="field">
-                <label>{!activeCargo.pessoa ? 'Quem vai servir' : 'Nova pessoa'}</label>
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>{!activeCargo.pessoa ? 'Quem vai servir' : 'Nova pessoa'}</span>
+                  {members.length > 0 && (
+                    <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                      {members.length} membros na ala
+                    </span>
+                  )}
+                </label>
+
+                {/* Filtro de busca rápida para a lista de membros */}
                 <input
+                  className="inp"
+                  type="search"
+                  placeholder="🔍 Digite para filtrar a lista abaixo..."
+                  value={swapFilterText}
+                  onChange={e => setSwapFilterText(e.target.value)}
+                  style={{ marginBottom: 6, fontSize: '12.5px', padding: '6px 10px' }}
+                />
+
+                <select
                   className="inp"
                   value={swapNome}
                   onChange={e => setSwapNome(e.target.value)}
-                  placeholder="Nome completo"
-                />
+                  style={{ fontSize: '13.5px' }}
+                >
+                  <option value="">(Nenhum)</option>
+                  {filteredMembersForSwap.map(m => {
+                    const callings = memberCallingsMap[m.nome.toLowerCase().trim()];
+                    const extra = callings && callings.length > 0 ? ` [⚠️ Já serve: ${callings[0]}]` : '';
+                    const metaParts = [
+                      m.idade ? `${m.idade} anos` : '',
+                      m.sexo ? (m.sexo === 'M' ? 'M' : 'F') : '',
+                    ].filter(Boolean).join(', ');
+                    return (
+                      <option key={m.id} value={m.nome}>
+                        {m.nome} {metaParts ? `(${metaParts})` : ''}{extra}
+                      </option>
+                    );
+                  })}
+                </select>
+
+                {swapNome && (
+                  <div style={{ marginTop: 6, fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>
+                      Selecionado: <b>{swapNome}</b>
+                    </span>
+                    <button
+                      type="button"
+                      className="btn ghost sm"
+                      style={{ padding: '2px 8px', fontSize: '11px' }}
+                      onClick={() => setSwapNome('')}
+                    >
+                      Limpar para (Nenhum)
+                    </button>
+                  </div>
+                )}
+
+                {swapNome && memberCallingsMap[swapNome.toLowerCase().trim()] && (
+                  <div style={{ marginTop: 6, padding: '6px 10px', borderRadius: '6px', background: 'rgba(217, 119, 6, 0.1)', border: '1px solid #d97706', fontSize: '12px', color: 'var(--ink)' }}>
+                    <strong style={{ color: '#d97706' }}>Aviso:</strong> {swapNome} já possui chamado(s): {memberCallingsMap[swapNome.toLowerCase().trim()].join(', ')}.
+                  </div>
+                )}
               </div>
 
               <div className="radios" role="radiogroup">
@@ -449,13 +572,62 @@ export const Chamados: React.FC = () => {
               </div>
 
               <div className="field">
-                <label>Quem serve (deixe em branco se vago)</label>
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Quem serve</span>
+                  {members.length > 0 && (
+                    <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                      {members.length} membros na ala
+                    </span>
+                  )}
+                </label>
+
+                {/* Filtro de busca rápida para a lista de membros */}
                 <input
+                  className="inp"
+                  type="search"
+                  placeholder="🔍 Digite para filtrar a lista abaixo..."
+                  value={newCargoFilterText}
+                  onChange={e => setNewCargoFilterText(e.target.value)}
+                  style={{ marginBottom: 6, fontSize: '12.5px', padding: '6px 10px' }}
+                />
+
+                <select
                   className="inp"
                   value={newCargoPessoa}
                   onChange={e => setNewCargoPessoa(e.target.value)}
-                  placeholder="Nome do membro"
-                />
+                  style={{ fontSize: '13.5px' }}
+                >
+                  <option value="">(Nenhum)</option>
+                  {filteredMembersForNewCargo.map(m => {
+                    const callings = memberCallingsMap[m.nome.toLowerCase().trim()];
+                    const extra = callings && callings.length > 0 ? ` [⚠️ Já serve: ${callings[0]}]` : '';
+                    const metaParts = [
+                      m.idade ? `${m.idade} anos` : '',
+                      m.sexo ? (m.sexo === 'M' ? 'M' : 'F') : '',
+                    ].filter(Boolean).join(', ');
+                    return (
+                      <option key={m.id} value={m.nome}>
+                        {m.nome} {metaParts ? `(${metaParts})` : ''}{extra}
+                      </option>
+                    );
+                  })}
+                </select>
+
+                {newCargoPessoa && (
+                  <div style={{ marginTop: 6, fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>
+                      Selecionado: <b>{newCargoPessoa}</b>
+                    </span>
+                    <button
+                      type="button"
+                      className="btn ghost sm"
+                      style={{ padding: '2px 8px', fontSize: '11px' }}
+                      onClick={() => setNewCargoPessoa('')}
+                    >
+                      Limpar para (Nenhum)
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="foot">
@@ -485,13 +657,13 @@ export const Chamados: React.FC = () => {
                   className="inp"
                   value={newOrgNome}
                   onChange={e => setNewOrgNome(e.target.value)}
-                  placeholder="Ex.: Professores da Primária"
+                  placeholder="Ex.: Escola Dominical"
                   required
                 />
               </div>
 
               <div className="field">
-                <label>Grupo</label>
+                <label>Grupo / Bloco</label>
                 <select
                   className="inp"
                   value={newOrgGrupo}
@@ -499,17 +671,16 @@ export const Chamados: React.FC = () => {
                 >
                   <option value="Bispado e secretaria">Bispado e secretaria</option>
                   <option value="Quórum de Élderes e Sociedade de Socorro">Quórum de Élderes e Sociedade de Socorro</option>
-                  <option value="Organizações da ala">Organizações da ala</option>
-                  <option value="Sacerdócio Aarônico">Sacerdócio Aarônico</option>
                   <option value="Classes das Moças">Classes das Moças</option>
-                  <option value="Outros líderes da ala">Outros líderes da ala</option>
+                  <option value="Organizações da ala">Organizações da ala</option>
+                  <option value="Outros chamados">Outros chamados</option>
                 </select>
               </div>
 
               <div className="foot">
                 <div className="btns">
                   <button type="submit" className="btn pri">
-                    Salvar
+                    Criar organização
                   </button>
                   <button type="button" className="btn ghost" onClick={() => setIsAddOrgModalOpen(false)}>
                     Cancelar

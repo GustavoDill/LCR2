@@ -105,6 +105,7 @@ export interface Cargo {
     pessoa: string;
     pid?: string;
     data?: string;
+    etapa?: string;
   } | null;
   historico?: CargoHistorico[];
 }
@@ -120,6 +121,7 @@ export interface Organizacao {
 export interface Membro {
   id: string;
   nome: string;
+  nomeOriginal?: string;
   sexo?: 'M' | 'F' | '';
   nascimento?: string;
   idade?: number | '';
