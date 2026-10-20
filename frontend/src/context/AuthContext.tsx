@@ -233,7 +233,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setUser(null);
         }
       } else {
-        setUser(null);
+        const savedDev = localStorage.getItem('lcr2_dev_user');
+        if (savedDev) {
+          try {
+            const parsed = JSON.parse(savedDev);
+            setUser(parsed);
+          } catch {
+            setUser(null);
+          }
+        } else {
+          setUser(null);
+        }
       }
       setLoading(false);
     });
@@ -293,6 +303,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('Sign out warning:', err);
       }
     }
+    localStorage.removeItem('lcr2_dev_user');
     setFirebaseUser(null);
     setUser(null);
   };
@@ -310,7 +321,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       org = 'Sociedade de Socorro';
     }
 
-    setUser({
+    const devProfile: UserProfile = {
       uid: `local-${targetRole}`,
       email: `${targetRole}@alabosque.org`,
       displayName: targetRole === 'bispado' ? 'Bispo Ala Bosque' : targetRole === 'lider_org' ? 'Pres. Sociedade de Socorro' : 'Líder do Conselho',
@@ -322,7 +333,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       organizacao: org,
       permissoes: getDefaultPermissions(targetRole),
       ativo: true,
-    });
+    };
+
+    localStorage.setItem('lcr2_dev_user', JSON.stringify(devProfile));
+    setUser(devProfile);
   };
 
   const toggleDevRole = () => {
