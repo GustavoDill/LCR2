@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getDb } from '../config/firebase.js';
 import { authenticate, requirePermission, requireBishopric, requireWrite } from '../middlewares/auth.js';
-import { Membro, MembroMeta } from '../types/index.js';
+import { Membro, MembroMeta, MembroProfile360, Organizacao } from '../types/index.js';
 
 const router = Router();
 router.use(authenticate, requirePermission('membros'));
@@ -40,6 +40,124 @@ router.get('/', async (req, res) => {
   } catch (error) {
     console.error('Error fetching membros:', error);
     res.status(500).json({ error: 'Erro ao carregar lista de membros.' });
+  }
+});
+
+router.get('/:id/profile360', async (req, res) => {
+  try {
+    const db = getDb();
+    const { id } = req.params;
+
+    const snap = await db.collection('conf/b/membros').get();
+    let member: Membro | null = null;
+
+    for (const doc of snap.docs) {
+      if (doc.id.startsWith('lista-')) {
+        const arr = doc.data()?.membros as Membro[];
+        if (Array.isArray(arr)) {
+          const m = arr.find(item => item.id === id);
+          if (m) {
+            member = m;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!member) {
+      return res.status(404).json({ error: 'Membro não encontrado.' });
+    }
+
+    const normName = norm(member.nome);
+
+    // 1. Chamados ativos e histórico a partir de conf/b/chamados
+    const chamadosSnap = await db.collection('conf/b/chamados').get();
+    const chamadosAtivos: any[] = [];
+    const historicoChamados: any[] = [];
+
+    chamadosSnap.docs.forEach(doc => {
+      const org = doc.data() as Organizacao;
+      (org.cargos || []).forEach(cargo => {
+        const matchAtual =
+          (cargo.pessoa && norm(cargo.pessoa) === normName) ||
+          (cargo.pessoaRef && cargo.pessoaRef.id === id);
+
+        if (matchAtual) {
+          chamadosAtivos.push({
+            suborgId: doc.id,
+            suborgNome: org.nome,
+            orgGrupo: org.grupo || 'Outros',
+            cargoId: cargo.id,
+            cargoTitulo: cargo.titulo,
+            desde: cargo.desde || '',
+          });
+        }
+
+        (cargo.historico || []).forEach(h => {
+          if (h.pessoa && norm(h.pessoa) === normName) {
+            historicoChamados.push({
+              suborgId: doc.id,
+              suborgNome: org.nome,
+              orgGrupo: org.grupo || 'Outros',
+              cargoTitulo: cargo.titulo,
+              desde: h.desde || '',
+              ate: h.ate || '',
+            });
+          }
+        });
+      });
+    });
+
+    // 2. Processos em andamento (conf/b/pessoas)
+    const pessoasSnap = await db.collection('conf/b/pessoas').get();
+    const processosPipeline: any[] = [];
+    pessoasSnap.docs.forEach(doc => {
+      const p = doc.data();
+      if (p.nome && norm(p.nome) === normName) {
+        processosPipeline.push({
+          id: doc.id,
+          tipo: p.tipo,
+          detalhe: p.detalhe || '',
+          chamado: p.chamado || '',
+          proxima: p.proxima || '',
+          responsavel: p.responsavel || '',
+          prazo: p.prazo || '',
+          status: p.status || 'aberto',
+          dpasso: p.dpasso ?? 0,
+          cargoRef: p.cargoRef || null,
+          criadoEm: p.criadoEm || 0,
+        });
+      }
+    });
+
+    // 3. Designações atribuídas
+    const isBisp = req.user?.isBishopric ?? false;
+    const conselhoSnap = await db.collection('designacoes').get();
+    let desItems = conselhoSnap.docs.map(doc => ({ ...doc.data(), id: doc.id, origem: 'conselho' }));
+
+    if (isBisp) {
+      const bispSnap = await db.collection('conf/b/designacoes').get();
+      desItems = desItems.concat(bispSnap.docs.map(doc => ({ ...doc.data(), id: doc.id, origem: 'bispado' })));
+    }
+
+    const designacoes = desItems.filter((d: any) => {
+      if (!d.responsavel) return false;
+      const respNorm = norm(d.responsavel);
+      return respNorm === normName || normName.includes(respNorm) || respNorm.includes(normName);
+    });
+
+    const result: MembroProfile360 = {
+      membro: member,
+      chamadosAtivos,
+      historicoChamados,
+      processosPipeline,
+      designacoes: designacoes as any[],
+    };
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching member profile 360:', error);
+    res.status(500).json({ error: 'Erro ao carregar perfil 360 do membro.' });
   }
 });
 

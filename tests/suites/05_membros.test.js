@@ -46,5 +46,55 @@ export function registerMembrosTests(runner) {
 
       await takeScreenshot(driver, 'membros_pass');
     });
+
+    s.test('Exibe badges dinâmicos de chamados ou estado sem chamado nas linhas dos membros', async (driver) => {
+      // Clear search to view full list
+      const searchBox = await driver.findElement(By.css("input[type='search'], input[placeholder*='Buscar'], input[placeholder*='buscar']"));
+      await searchBox.clear();
+      await driver.sleep(300);
+
+      const badges = await driver.findElements(By.css('.badge-calling, .badge-sem-chamado'));
+      if (badges.length === 0) {
+        throw new Error('Nenhum badge de chamado ou status encontrado na listagem de membros');
+      }
+    });
+
+    s.test('Abre a Ficha 360° do membro em gaveta lateral exibindo perfil integrado', async (driver) => {
+      // Find the first Ficha 360 button
+      const btn360 = await driver.wait(
+        until.elementLocated(By.css('.btn-360, .member-clickable-row')),
+        CONFIG.timeout
+      );
+      await btn360.click();
+
+      // Wait for drawer panel to appear
+      const drawer = await driver.wait(
+        until.elementLocated(By.css('.drawer-panel')),
+        CONFIG.timeout
+      );
+
+      // Wait for 360 profile data to load inside drawer
+      await driver.wait(
+        until.elementLocated(By.css('.drawer-section-title')),
+        CONFIG.timeout
+      );
+
+      const drawerText = (await drawer.getText()).toLowerCase();
+      if (!drawerText.includes('chamados ativos na ala') && !drawerText.includes('dados de cadastro')) {
+        throw new Error(`Conteúdo esperado na Ficha 360 não encontrado: ${drawerText.slice(0, 150)}`);
+      }
+
+      await takeScreenshot(driver, 'membros_360_drawer_pass');
+
+      // Close drawer
+      const closeBtn = await driver.findElement(By.css('.drawer-close-btn'));
+      await closeBtn.click();
+      await driver.sleep(300);
+
+      const openDrawers = await driver.findElements(By.css('.drawer-panel'));
+      if (openDrawers.length > 0) {
+        throw new Error('A gaveta 360° deveria estar fechada após clicar no botão de fechar');
+      }
+    });
   });
 }
