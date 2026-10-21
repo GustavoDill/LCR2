@@ -1,0 +1,17 @@
+{
+  "name": "lcr2-workspace",
+  "version": "1.0.0",
+  "description": "LCR2 Ala Bosque - Monorepo & E2E Test Suite",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/run.js",
+    "test:headed": "node tests/run.js --headed",
+    "test:e2e": "node tests/run.js",
+    "test:indicadores": "node tests/run.js --suite=indicadores",
+    "test:seminario": "node tests/run.js --suite=seminario",
+    "test:chamados": "node tests/run.js --suite=chamados"
+  },
+  "devDependencies": {
+    "selenium-webdriver": "^4.26.0"
+  }
+}
