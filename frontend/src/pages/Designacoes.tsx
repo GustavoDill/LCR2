@@ -1,11 +1,15 @@
 import React, { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
-import { Designacao, TaskStatus, OriginType } from '../types';
+import { Designacao, TaskStatus, OriginType, Membro, Ata } from '../types';
 
 export const Designacoes: React.FC = () => {
   const { isBishopric, canWrite } = useAuth();
+  const location = useLocation();
   const [items, setItems] = useState<Designacao[]>([]);
+  const [members, setMembers] = useState<Membro[]>([]);
+  const [atas, setAtas] = useState<Ata[]>([]);
   const [loading, setLoading] = useState(true);
   const [dFilter, setDFilter] = useState<'abertas' | 'atrasadas' | 'concluidas' | 'todas'>('abertas');
   const [dOrig, setDOrig] = useState<'todas' | 'bispado' | 'conselho'>('todas');
@@ -19,17 +23,29 @@ export const Designacoes: React.FC = () => {
   const [status, setStatus] = useState<TaskStatus>('pendente');
   const [proximo, setProximo] = useState('');
   const [origem, setOrigem] = useState<OriginType>('conselho');
+  const [ataId, setAtaId] = useState<string | undefined>(undefined);
 
   const today = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
-    loadItems();
+    loadItems().then(() => {
+      const state = location.state as any;
+      if (state?.ataId) {
+        openNewModal(state.origin || (isBishopric ? 'bispado' : 'conselho'), state.ataId);
+      }
+    });
   }, [isBishopric]);
 
   async function loadItems() {
     try {
-      const data = await api.get<Designacao[]>('/designacoes');
-      setItems(data);
+      const [desData, membersRes, atasRes] = await Promise.all([
+        api.get<Designacao[]>('/designacoes'),
+        api.get<{ members: Membro[] }>('/membros').catch(() => ({ members: [] })),
+        api.get<Ata[]>('/atas').catch(() => []),
+      ]);
+      setItems(desData);
+      setMembers(membersRes.members || []);
+      setAtas(atasRes || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -37,7 +53,7 @@ export const Designacoes: React.FC = () => {
     }
   }
 
-  function openNewModal(origin: OriginType = 'conselho') {
+  function openNewModal(origin: OriginType = 'conselho', presetAtaId?: string) {
     setEditingItem(null);
     setTitulo('');
     setResponsavel('');
@@ -45,6 +61,7 @@ export const Designacoes: React.FC = () => {
     setStatus('pendente');
     setProximo('');
     setOrigem(origin);
+    setAtaId(presetAtaId || undefined);
     setIsModalOpen(true);
   }
 
@@ -56,6 +73,7 @@ export const Designacoes: React.FC = () => {
     setStatus(d.status || 'pendente');
     setProximo(d.proximo || '');
     setOrigem(d.origem || 'conselho');
+    setAtaId(d.ataId);
     setIsModalOpen(true);
   }
 
@@ -72,6 +90,7 @@ export const Designacoes: React.FC = () => {
           status,
           proximo,
           origem,
+          ataId,
           currentOrigin: editingItem.origem,
         });
       } else {
@@ -82,6 +101,7 @@ export const Designacoes: React.FC = () => {
           status,
           proximo,
           origem,
+          ataId,
         });
       }
       setIsModalOpen(false);
@@ -233,6 +253,15 @@ export const Designacoes: React.FC = () => {
                   </div>
 
                   <div className="acts">
+                    {d.ataId && (
+                      <span
+                        className="tag"
+                        style={{ background: 'rgba(56, 189, 248, 0.12)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8' }}
+                        title={`Vinculada à Ata (${atas.find(a => a.id === d.ataId)?.data || d.ataId})`}
+                      >
+                        📝 Ata{atas.find(a => a.id === d.ataId)?.data ? ` · ${atas.find(a => a.id === d.ataId)!.data.slice(5)}` : ''}
+                      </span>
+                    )}
                     {isBishopric && (
                       <span className={`tag tag-${d.origem}`}>
                         {d.origem === 'bispado' ? 'Só bispado' : 'Conselho'}
@@ -267,6 +296,12 @@ export const Designacoes: React.FC = () => {
           <div className="sheet" onClick={e => e.stopPropagation()}>
             <h3>{editingItem ? 'Editar designação' : 'Nova designação'}</h3>
             <form onSubmit={handleSubmit} className="form">
+              {ataId && (
+                <div style={{ fontSize: '12px', color: '#38bdf8', padding: '6px 10px', background: 'rgba(56, 189, 248, 0.1)', borderRadius: '6px' }}>
+                  📝 Vinculada à Ata de Reunião: <b>{atas.find(a => a.id === ataId)?.data || ataId}</b>
+                </div>
+              )}
+
               <div className="field">
                 <label>Designação *</label>
                 <input
@@ -279,13 +314,44 @@ export const Designacoes: React.FC = () => {
               </div>
 
               <div className="field">
-                <label>Responsável</label>
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Responsável</span>
+                  {members.length > 0 && (
+                    <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                      {members.length} membros na ala
+                    </span>
+                  )}
+                </label>
+
+                {/* Atalhos rápidos de liderança */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginBottom: '6px' }}>
+                  {['Bispo', '1º Conselheiro', '2º Conselheiro', 'Secretário', 'Pres. Élderes', 'Pres. Soc. Socorro'].map(preset => (
+                    <button
+                      key={preset}
+                      type="button"
+                      className="chip sm"
+                      style={{ fontSize: '11px', padding: '2px 8px' }}
+                      onClick={() => setResponsavel(preset)}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+
                 <input
                   className="inp"
+                  list="membros-designacao-list"
                   value={responsavel}
                   onChange={e => setResponsavel(e.target.value)}
-                  placeholder="Ex.: Bispo, Pres. Sociedade de Socorro"
+                  placeholder="Digite um nome ou cargo, ou selecione da lista..."
                 />
+                <datalist id="membros-designacao-list">
+                  {members.map(m => (
+                    <option key={m.id} value={m.nome}>
+                      {m.chamado ? `${m.nome} (${m.chamado})` : m.nome}
+                    </option>
+                  ))}
+                </datalist>
               </div>
 
               <div className="two">
