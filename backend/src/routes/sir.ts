@@ -6,6 +6,184 @@ import { SIRRelatorio, SIREstaca } from '../types/index.js';
 const router = Router();
 router.use(authenticate, requireBishopric);
 
+// Seed data from reference screenshot
+export const SEED_SIR = {
+  estacaSeminario: {
+    id: 'estaca-seminario-2026-09-28',
+    programa: 'seminario' as const,
+    data: '2026-09-28',
+    potencial: 248,
+    matriculados: 60,
+    anoAnterior: 52,
+    meta: 0,
+    alas: [
+      { nome: 'Planaltina Ward', matriculados: 15, potencial: 42 },
+      { nome: 'Petrópolis Ward', matriculados: 12, potencial: 38 },
+      { nome: 'Marau Ward', matriculados: 9, potencial: 32 },
+      { nome: 'Lagoa Vermelha Ward', matriculados: 7, potencial: 27 },
+      { nome: 'Erechim 1st Ward', matriculados: 8, potencial: 38 },
+      { nome: 'Bosque Ward', matriculados: 8, potencial: 57 },
+      { nome: 'Erechim 2nd Branch', matriculados: 1, potencial: 14 },
+    ],
+    historico: { '2023': 48, '2024': 52, '2025': 55, '2026': 60 },
+    importadoEm: Date.now(),
+  },
+  estacaInstituto: {
+    id: 'estaca-instituto-2026-09-28',
+    programa: 'instituto' as const,
+    data: '2026-09-28',
+    potencial: 800,
+    matriculados: 36,
+    anoAnterior: 34,
+    meta: 2,
+    alas: [
+      { nome: 'Planaltina Ward', matriculados: 7, potencial: 110 },
+      { nome: 'Petrópolis Ward', matriculados: 6, potencial: 105 },
+      { nome: 'Marau Ward', matriculados: 5, potencial: 95 },
+      { nome: 'Bosque Ward', matriculados: 8, potencial: 167 },
+      { nome: 'Lagoa Vermelha Ward', matriculados: 4, potencial: 100 },
+      { nome: 'Erechim 1st Ward', matriculados: 4, potencial: 125 },
+      { nome: 'Erechim 2nd Branch', matriculados: 2, potencial: 98 },
+    ],
+    historico: { '2023': 30, '2024': 32, '2025': 34, '2026': 36 },
+    importadoEm: Date.now(),
+  },
+  alunosRelatorio: {
+    id: 'alunos-2026-10-09',
+    data: '2026-10-09',
+    semestre: '2º semestre 2026',
+    importadoEm: Date.now(),
+    alunos: [
+      {
+        nome: 'Leonardo Sodré Godinho',
+        tipo: 'Instituto',
+        situacao: 'risco' as const,
+        freq: 0,
+        leitura: 0,
+        aulas: 6,
+        avaliacao: 'Não Feita',
+      },
+      {
+        nome: 'Deryck Emanuel Pinheiro Soares Lucio',
+        tipo: 'Seminário',
+        situacao: 'risco' as const,
+        freq: 3,
+        leitura: 0,
+        aulas: 31,
+        avaliacao: 'Não Feita',
+      },
+      {
+        nome: 'Teylor Bruno Pinheiro Lucio',
+        tipo: 'Seminário',
+        situacao: 'risco' as const,
+        freq: 3,
+        leitura: 0,
+        aulas: 31,
+        avaliacao: 'Não Feita',
+      },
+      {
+        nome: 'Nicholas Alexandre Rodrigues',
+        tipo: 'Seminário',
+        situacao: 'risco' as const,
+        freq: 3,
+        leitura: 0,
+        aulas: 31,
+        avaliacao: 'Não Feita',
+      },
+      {
+        nome: 'Lucas Gabriel da Silva',
+        tipo: 'Seminário',
+        situacao: 'risco' as const,
+        freq: 5,
+        leitura: 0,
+        aulas: 30,
+        avaliacao: 'Não Feita',
+      },
+      {
+        nome: 'Arthur Henrique Santos',
+        tipo: 'Seminário',
+        situacao: 'risco' as const,
+        freq: 12,
+        leitura: 15,
+        aulas: 28,
+        avaliacao: 'Não Feita',
+      },
+      {
+        nome: 'Guilherme Alves Ferreira',
+        tipo: 'Seminário',
+        situacao: 'risco' as const,
+        freq: 14,
+        leitura: 20,
+        aulas: 27,
+        avaliacao: 'Não Feita',
+      },
+      {
+        nome: 'Matheus Oliveira Costa',
+        tipo: 'Seminário',
+        situacao: 'pendencia' as const,
+        freq: 30,
+        leitura: 35,
+        aulas: 22,
+        avaliacao: 'Feita',
+      },
+      {
+        nome: 'Amanda Beatriz Lima',
+        tipo: 'Instituto',
+        situacao: 'risco' as const,
+        freq: 50,
+        leitura: 30,
+        aulas: 5,
+        avaliacao: 'Não Feita',
+      },
+      {
+        nome: 'Felipe Augusto Pereira',
+        tipo: 'Instituto',
+        situacao: 'risco' as const,
+        freq: 60,
+        leitura: 40,
+        aulas: 4,
+        avaliacao: 'Não Feita',
+      },
+      {
+        nome: 'Gabriel Mendes Rocha',
+        tipo: 'Instituto',
+        situacao: 'pendencia' as const,
+        freq: 98,
+        leitura: 65,
+        aulas: 1,
+        avaliacao: 'Feita',
+      },
+      {
+        nome: 'Juliana Cristine Ramos',
+        tipo: 'Instituto',
+        situacao: 'pendencia' as const,
+        freq: 98,
+        leitura: 65,
+        aulas: 1,
+        avaliacao: 'Feita',
+      },
+      {
+        nome: 'Mariana Duarte Souza',
+        tipo: 'Instituto',
+        situacao: 'pendencia' as const,
+        freq: 99,
+        leitura: 70,
+        aulas: 0,
+        avaliacao: 'Feita',
+      },
+      {
+        nome: 'Vinicius Ribeiro Moreira',
+        tipo: 'Instituto',
+        situacao: 'pendencia' as const,
+        freq: 99,
+        leitura: 70,
+        aulas: 0,
+        avaliacao: 'Feita',
+      },
+    ],
+  },
+};
+
 router.get('/', async (req, res) => {
   try {
     const db = getDb();
@@ -28,6 +206,17 @@ router.get('/', async (req, res) => {
         }
       }
     });
+
+    // Auto-seed if database has no SIR records yet
+    if (alunos.length === 0 && estaca.seminario.length === 0 && estaca.instituto.length === 0) {
+      await db.doc(`conf/b/sir/${SEED_SIR.alunosRelatorio.id}`).set(SEED_SIR.alunosRelatorio);
+      await db.doc(`conf/b/sir/${SEED_SIR.estacaSeminario.id}`).set(SEED_SIR.estacaSeminario);
+      await db.doc(`conf/b/sir/${SEED_SIR.estacaInstituto.id}`).set(SEED_SIR.estacaInstituto);
+
+      alunos.push(SEED_SIR.alunosRelatorio as SIRRelatorio);
+      estaca.seminario.push(SEED_SIR.estacaSeminario as SIREstaca);
+      estaca.instituto.push(SEED_SIR.estacaInstituto as SIREstaca);
+    }
 
     const sortByDate = (a: any, b: any) => String(b.data || '').localeCompare(String(a.data || ''));
     alunos.sort(sortByDate);
@@ -113,6 +302,19 @@ router.delete('/:id', requireWrite, async (req, res) => {
   } catch (error) {
     console.error('Error deleting SIR report:', error);
     res.status(500).json({ error: 'Erro ao excluir relatório.' });
+  }
+});
+
+router.post('/seed/force', requireWrite, async (req, res) => {
+  try {
+    const db = getDb();
+    await db.doc(`conf/b/sir/${SEED_SIR.alunosRelatorio.id}`).set(SEED_SIR.alunosRelatorio);
+    await db.doc(`conf/b/sir/${SEED_SIR.estacaSeminario.id}`).set(SEED_SIR.estacaSeminario);
+    await db.doc(`conf/b/sir/${SEED_SIR.estacaInstituto.id}`).set(SEED_SIR.estacaInstituto);
+    res.json({ success: true, seeded: SEED_SIR });
+  } catch (error) {
+    console.error('Error force seeding SIR:', error);
+    res.status(500).json({ error: 'Erro ao popular dados do Seminário.' });
   }
 });
 

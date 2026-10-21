@@ -43,7 +43,7 @@ export function getDefaultPermissions(role: UserRole): UserPermissions {
       agenda: true,
       atividades: true,
       natal: true,
-      indicadores: false,
+      indicadores: true,
       atas: true,
       importar: false,
     };
@@ -62,7 +62,7 @@ export function getDefaultPermissions(role: UserRole): UserPermissions {
     agenda: true,
     atividades: true,
     natal: true,
-    indicadores: false,
+    indicadores: true,
     atas: true,
     importar: false,
   };

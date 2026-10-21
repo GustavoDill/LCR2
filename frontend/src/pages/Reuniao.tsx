@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
-import { Ata, MeetingType } from '../types';
+import { Ata, MeetingType, Designacao, Pessoa, Membro, Organizacao } from '../types';
 
 export const MEET_INFO = {
   bispado: {
@@ -77,12 +77,106 @@ export const Reuniao: React.FC = () => {
   const [confirmModal, setConfirmModal] = useState<'end' | 'discard' | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Dynamic widgets data
+  const [members, setMembers] = useState<Membro[]>([]);
+  const [liveDesignacoes, setLiveDesignacoes] = useState<Designacao[]>([]);
+  const [livePessoas, setLivePessoas] = useState<Pessoa[]>([]);
+  const [vagasCount, setVagasCount] = useState(0);
+
+  // New task modal states
+  const [isNewTaskModalOpen, setIsNewTaskModalOpen] = useState(false);
+  const [newTaskSectionKey, setNewTaskSectionKey] = useState('');
+  const [newTaskTitulo, setNewTaskTitulo] = useState('');
+  const [newTaskResponsavel, setNewTaskResponsavel] = useState('Bispo');
+  const [newTaskPrazo, setNewTaskPrazo] = useState('');
+
   // Auto-save debounce tracker
   const debounceTimers = useRef<Record<string, any>>({});
 
   useEffect(() => {
     loadOpenMeetings();
+    loadMeetingContextData();
   }, [location.state]);
+
+  async function loadMeetingContextData() {
+    try {
+      const [membersRes, desRes, pessoasRes, chamadosRes] = await Promise.all([
+        api.get<{ members: Membro[] }>('/membros').catch(() => ({ members: [] })),
+        api.get<Designacao[]>('/designacoes').catch(() => []),
+        api.get<Pessoa[]>('/pessoas').catch(() => []),
+        api.get<Organizacao[]>('/chamados/organizacoes').catch(() => []),
+      ]);
+      setMembers(membersRes.members || []);
+      setLiveDesignacoes(desRes || []);
+      setLivePessoas(pessoasRes || []);
+      let vCount = 0;
+      (chamadosRes || []).forEach(org => {
+        (org.cargos || []).forEach(c => {
+          if (!c.pessoa && !c.fixo) vCount++;
+        });
+      });
+      setVagasCount(vCount);
+    } catch (err) {
+      console.error('Erro ao carregar contexto de reunião:', err);
+    }
+  }
+
+  function openCreateTaskModal(secKey: string) {
+    setNewTaskSectionKey(secKey);
+    setNewTaskTitulo('');
+    setNewTaskResponsavel('Bispo');
+    setNewTaskPrazo(new Date(Date.now() + 7 * 864e5).toISOString().split('T')[0]);
+    setIsNewTaskModalOpen(true);
+  }
+
+  async function handleCreateTaskSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newTaskTitulo.trim() || !activeMeeting) return;
+    try {
+      await api.post('/designacoes', {
+        titulo: newTaskTitulo.trim(),
+        responsavel: newTaskResponsavel.trim(),
+        prazo: newTaskPrazo,
+        origem: activeMeeting.tipo,
+        ataId: activeMeeting.id,
+        status: 'pendente',
+      });
+      setIsNewTaskModalOpen(false);
+
+      // Auto-annotate into current section notes
+      const currentNote = activeMeeting.notas?.[newTaskSectionKey] || '';
+      const addition = `[Designação: "${newTaskTitulo.trim()}" -> ${newTaskResponsavel.trim()} (até ${newTaskPrazo})]`;
+      const updatedNote = currentNote ? `${currentNote}\n${addition}` : addition;
+      handleNoteChange(newTaskSectionKey, updatedNote);
+
+      // Refresh live designações list
+      const desRes = await api.get<Designacao[]>('/designacoes');
+      setLiveDesignacoes(desRes || []);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao criar designação');
+    }
+  }
+
+  async function handleCycleTaskInMeeting(taskId: string, origem: 'bispado' | 'conselho') {
+    try {
+      await api.post(`/designacoes/${taskId}/cycle`, { origem });
+      const desRes = await api.get<Designacao[]>('/designacoes');
+      setLiveDesignacoes(desRes || []);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao alterar status');
+    }
+  }
+
+  async function handleAdvanceChamadoInMeeting(pessoaId: string) {
+    if (!confirm('Aprovar e avançar a etapa deste chamado?')) return;
+    try {
+      await api.post(`/pessoas/${pessoaId}/advance-chamado`);
+      const pessoasRes = await api.get<Pessoa[]>('/pessoas');
+      setLivePessoas(pessoasRes || []);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao avançar chamado');
+    }
+  }
 
   async function loadOpenMeetings() {
     try {
@@ -394,6 +488,189 @@ export const Reuniao: React.FC = () => {
                     </ol>
                   )}
 
+                  {/* WIDGET DINÂMICO 1: Designações Anteriores (Seção B do Bispado ou 2 do Conselho) */}
+                  {(sec.k === 'B' || sec.k === '2') && (
+                    <div className="embed" style={{ marginTop: '8px' }}>
+                      <div className="embed-h">
+                        <span>📋 Designações em Aberto na Ala</span>
+                        {canWrite && (
+                          <button
+                            type="button"
+                            className="btn sm"
+                            style={{ padding: '2px 8px', fontSize: '11px' }}
+                            onClick={() => openCreateTaskModal(sec.k)}
+                          >
+                            + Nova designação
+                          </button>
+                        )}
+                      </div>
+
+                      {liveDesignacoes.filter(d => d.status !== 'concluida' && (activeMeeting.tipo === 'bispado' || d.origem === 'conselho')).length === 0 ? (
+                        <div style={{ fontSize: '12px', color: '#10b981', padding: '6px 0' }}>
+                          ✨ Todas as designações anteriores estão em dia!
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px' }}>
+                          {liveDesignacoes
+                            .filter(d => d.status !== 'concluida' && (activeMeeting.tipo === 'bispado' || d.origem === 'conselho'))
+                            .slice(0, 8)
+                            .map(t => {
+                              const todayStr = new Date().toISOString().split('T')[0];
+                              const late = t.prazo && t.prazo < todayStr;
+                              return (
+                                <div
+                                  key={t.id}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '10px',
+                                    padding: '6px 10px',
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    borderRadius: '6px',
+                                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    className={`st st-${t.status || 'pendente'}`}
+                                    style={{ fontSize: '11px', padding: '2px 8px' }}
+                                    onClick={() => handleCycleTaskInMeeting(t.id, t.origem)}
+                                    disabled={!canWrite}
+                                    title="Tocar para mudar a situação"
+                                  >
+                                    {t.status === 'andamento' ? 'Andamento' : t.status === 'concluida' ? 'Concluída' : 'Pendente'}
+                                  </button>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: '13px', color: '#f1f5f9', fontWeight: 500 }}>{t.titulo}</div>
+                                    <div style={{ fontSize: '11.5px', color: '#94a3b8', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                      <span>👤 {t.responsavel || 'Sem responsável'}</span>
+                                      <span style={{ color: late ? '#f43f5e' : 'inherit' }}>
+                                        📅 {t.prazo || 'Sem prazo'} {late ? '· Atrasada' : ''}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* WIDGET DINÂMICO 2: Chamados da Ala em Pipeline (Seção F do Bispado) */}
+                  {sec.k === 'F' && (
+                    <div className="embed" style={{ marginTop: '8px' }}>
+                      <div className="embed-h">
+                        <span>👑 Pipeline de Chamados ({livePessoas.filter(p => p.tipo === 'chamado' && p.status === 'aberto').length} em andamento)</span>
+                        <span style={{ color: vagasCount ? '#f43f5e' : '#10b981', fontSize: '11px' }}>
+                          {vagasCount} vaga{vagasCount === 1 ? '' : 's'} aberta{vagasCount === 1 ? '' : 's'} na ala
+                        </span>
+                      </div>
+
+                      {livePessoas.filter(p => p.tipo === 'chamado' && p.status === 'aberto').length === 0 ? (
+                        <div style={{ fontSize: '12px', color: '#94a3b8', padding: '6px 0' }}>
+                          Nenhum processo de indicação pendente nesta semana.
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+                          {livePessoas
+                            .filter(p => p.tipo === 'chamado' && p.status === 'aberto')
+                            .map(cp => (
+                              <div
+                                key={cp.id}
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  gap: '10px',
+                                  padding: '8px 12px',
+                                  background: 'rgba(56, 189, 248, 0.05)',
+                                  border: '1px solid rgba(56, 189, 248, 0.2)',
+                                  borderRadius: '8px',
+                                }}
+                              >
+                                <div>
+                                  <div style={{ fontSize: '13.5px', fontWeight: 600, color: '#f8fafc' }}>
+                                    {cp.nome} <span style={{ color: '#38bdf8', fontWeight: 400 }}>— {cp.chamado}</span>
+                                  </div>
+                                  <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '2px' }}>
+                                    Etapa atual: <b style={{ color: '#e2e8f0' }}>{cp.detalhe || 'Indicado'}</b>
+                                    {cp.proxima && ` · Próximo: ${cp.proxima}`}
+                                  </div>
+                                </div>
+                                {canWrite && (
+                                  <button
+                                    type="button"
+                                    className="btn sm"
+                                    style={{ fontSize: '11.5px', padding: '4px 10px', whiteSpace: 'nowrap' }}
+                                    onClick={() => handleAdvanceChamadoInMeeting(cp.id)}
+                                  >
+                                    Aprovar / Avançar
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* WIDGET DINÂMICO 3: Pessoas e Famílias em Acompanhamento (Seção C do Bispado) */}
+                  {sec.k === 'C' && livePessoas.filter(p => p.tipo === 'acomp' && p.status === 'aberto').length > 0 && (
+                    <div className="embed" style={{ marginTop: '8px' }}>
+                      <div className="embed-h">
+                        <span>🤝 Pessoas em Acompanhamento Espiritual</span>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                        {livePessoas
+                          .filter(p => p.tipo === 'acomp' && p.status === 'aberto')
+                          .map(ap => (
+                            <span
+                              key={ap.id}
+                              style={{
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                border: '1px solid rgba(255, 255, 255, 0.1)',
+                                padding: '4px 10px',
+                                borderRadius: '6px',
+                                fontSize: '12px',
+                                color: '#e2e8f0',
+                              }}
+                            >
+                              👤 {ap.nome} {ap.detalhe ? `(${ap.detalhe})` : ''}
+                            </span>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* WIDGET DINÂMICO 4: Ordenanças em Preparação (Seção E do Bispado) */}
+                  {sec.k === 'E' && livePessoas.filter(p => p.tipo === 'ordenanca' && p.status === 'aberto').length > 0 && (
+                    <div className="embed" style={{ marginTop: '8px' }}>
+                      <div className="embed-h">
+                        <span>🕊️ Preparação para Ordenanças</span>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                        {livePessoas
+                          .filter(p => p.tipo === 'ordenanca' && p.status === 'aberto')
+                          .map(op => (
+                            <span
+                              key={op.id}
+                              style={{
+                                background: 'rgba(16, 185, 129, 0.08)',
+                                border: '1px solid rgba(16, 185, 129, 0.25)',
+                                padding: '4px 10px',
+                                borderRadius: '6px',
+                                fontSize: '12px',
+                                color: '#34d399',
+                              }}
+                            >
+                              ✨ {op.nome} {op.detalhe ? `· ${op.detalhe}` : ''}
+                            </span>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="field">
                     <label>Anotações</label>
                     <textarea
@@ -410,7 +687,8 @@ export const Reuniao: React.FC = () => {
                       <button
                         type="button"
                         className="btn sm"
-                        onClick={() => navigate('/designacoes', { state: { ataId: activeMeeting.id, origin: activeMeeting.tipo } })}
+                        onClick={() => openCreateTaskModal(sec.k)}
+                        title="Criar designação diretamente nesta reunião"
                       >
                         + Designação
                       </button>
@@ -434,6 +712,92 @@ export const Reuniao: React.FC = () => {
           );
         })}
       </div>
+
+      {/* Modal: Nova Designação Direta na Reunião */}
+      {isNewTaskModalOpen && (
+        <div className="modal" onClick={() => setIsNewTaskModalOpen(false)}>
+          <div className="sheet" onClick={e => e.stopPropagation()}>
+            <h3>+ Nova Designação na Reunião</h3>
+            <p className="sub" style={{ marginTop: -8 }}>
+              {activeMeeting.tipo === 'bispado' ? 'Reunião de Bispado' : 'Conselho da Ala'} · {activeMeeting.data}
+            </p>
+
+            <form onSubmit={handleCreateTaskSubmit} className="form">
+              <div className="field">
+                <label>Designação *</label>
+                <input
+                  className="inp"
+                  value={newTaskTitulo}
+                  onChange={e => setNewTaskTitulo(e.target.value)}
+                  placeholder="Ex.: Visitar família com o presidente do quórum"
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div className="field">
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Responsável</span>
+                  {members.length > 0 && (
+                    <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                      {members.length} membros na ala
+                    </span>
+                  )}
+                </label>
+
+                {/* Atalhos rápidos de liderança */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginBottom: '6px' }}>
+                  {['Bispo', '1º Conselheiro', '2º Conselheiro', 'Secretário', 'Pres. Élderes', 'Pres. Soc. Socorro'].map(preset => (
+                    <button
+                      key={preset}
+                      type="button"
+                      className="chip sm"
+                      style={{ fontSize: '11px', padding: '2px 8px' }}
+                      onClick={() => setNewTaskResponsavel(preset)}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+
+                <input
+                  className="inp"
+                  list="membros-meeting-list"
+                  value={newTaskResponsavel}
+                  onChange={e => setNewTaskResponsavel(e.target.value)}
+                  placeholder="Digite um cargo ou selecione um membro..."
+                />
+                <datalist id="membros-meeting-list">
+                  {members.map(m => (
+                    <option key={m.id} value={m.nome}>
+                      {m.chamado ? `${m.nome} (${m.chamado})` : m.nome}
+                    </option>
+                  ))}
+                </datalist>
+              </div>
+
+              <div className="field">
+                <label>Prazo de conclusão</label>
+                <input
+                  className="inp"
+                  type="date"
+                  value={newTaskPrazo}
+                  onChange={e => setNewTaskPrazo(e.target.value)}
+                />
+              </div>
+
+              <div className="btns" style={{ marginTop: 12 }}>
+                <button type="submit" className="btn pri">
+                  Criar designação
+                </button>
+                <button type="button" className="btn ghost" onClick={() => setIsNewTaskModalOpen(false)}>
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {confirmModal === 'end' ? (
         <div className="confirm">

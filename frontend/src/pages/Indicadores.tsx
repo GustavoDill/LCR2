@@ -1,287 +1,300 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { IndicadorMensal } from '../types';
-import { IconCheck, IconChevronLeft, IconChevronRight, IconTrendingUp } from '../components/Icons';
+
+export const IND = [
+  { key: 'sacramental', title: 'Reunião sacramental', sub: 'participantes (média)' },
+  { key: 'jovens', title: 'Jovens', sub: 'frequência (média)' },
+  { key: 'primaria', title: 'Primária', sub: 'frequência (média)' },
+  { key: 'ensinados', title: 'Missionário', sub: 'pessoas sendo ensinadas' },
+  { key: 'retorno', title: 'Retorno', sub: 'membros acompanhados' },
+  { key: 'templo', title: 'Templo', sub: 'recomendações ativas' },
+  { key: 'ministracao', title: 'Ministração', sub: 'contatos no mês' },
+  { key: 'ordenancas', title: 'Ordenanças', sub: 'pessoas em preparação' },
+  { key: 'ensino', title: 'Ensino', sub: 'professores preparados' },
+  { key: 'servico', title: 'Serviço', sub: 'projetos realizados' },
+  { key: 'autossuf', title: 'Autossuficiência', sub: 'pessoas apoiadas' },
+] as const;
+
+const MESES = [
+  'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+  'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'
+];
+
+const MESES_ABREV = [
+  'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT'
+];
+
+function pad(n: number) {
+  return String(n).padStart(2, '0');
+}
+
+function monthLabel(ym: string) {
+  const [y, m] = ym.split('-').map(Number);
+  return `${MESES[(m || 1) - 1]} ${y}`;
+}
+
+function shiftMonth(ym: string, delta: number) {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(y, (m || 1) - 1 + delta, 1);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+}
 
 export const Indicadores: React.FC = () => {
-  const { isBishopric } = useAuth();
-  const hoje = new Date();
-  const mesAtualStr = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
-
-  const [mesSelecionado, setMesSelecionado] = useState<string>(mesAtualStr);
-  const [indicador, setIndicador] = useState<IndicadorMensal>({
-    mes: mesAtualStr,
-    sacramentalPresenca: 0,
-    membrosAtivos: 0,
-    recomendacoesValidas: 0,
-    ministracaoCompanheirismos: 0,
-    ministracaoEntrevistas: 0,
-    jovensAtivos: 0,
-    primariaPresenca: 0,
-    observacoes: '',
-  });
-  const [historico, setHistorico] = useState<IndicadorMensal[]>([]);
+  const { canWrite } = useAuth();
+  
+  // Default to 2026-10 to match reference information, or fallback to current month
+  const [currentMonth, setCurrentMonth] = useState('2026-10');
+  const [allIndicadores, setAllIndicadores] = useState<Record<string, IndicadorMensal>>({});
   const [loading, setLoading] = useState(true);
-  const [salvando, setSalvando] = useState(false);
-  const [msgSucesso, setMsgSucesso] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+
+  // Debounce timers for field saving
+  const saveTimersRef = useRef<Record<string, any>>({});
+
+  const currentData = useMemo(() => {
+    return allIndicadores[currentMonth] || { id: currentMonth, mes: currentMonth };
+  }, [allIndicadores, currentMonth]);
+
+  const last6Months = useMemo(() => {
+    return [5, 4, 3, 2, 1, 0].map(n => shiftMonth(currentMonth, -n));
+  }, [currentMonth]);
 
   useEffect(() => {
-    carregarHistorico();
+    loadIndicadores();
   }, []);
 
-  useEffect(() => {
-    carregarMes(mesSelecionado);
-  }, [mesSelecionado]);
-
-  const carregarHistorico = async () => {
-    try {
-      const res = await api.get<IndicadorMensal[]>('/api/indicadores');
-      setHistorico(res || []);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const carregarMes = async (mes: string) => {
+  async function loadIndicadores() {
     try {
       setLoading(true);
-      const res = await api.get<IndicadorMensal>(`/api/indicadores/${mes}`);
-      if (res && res.mes) {
-        setIndicador(res);
-      } else {
-        setIndicador({
-          mes,
-          sacramentalPresenca: 0,
-          membrosAtivos: 0,
-          recomendacoesValidas: 0,
-          ministracaoCompanheirismos: 0,
-          ministracaoEntrevistas: 0,
-          jovensAtivos: 0,
-          primariaPresenca: 0,
-          observacoes: '',
-        });
+      const data = await api.get<Record<string, IndicadorMensal>>('/indicadores');
+      if (data && typeof data === 'object') {
+        setAllIndicadores(data);
       }
     } catch (err) {
-      console.error(err);
+      console.error('Erro ao carregar indicadores:', err);
     } finally {
       setLoading(false);
     }
+  }
+
+  const saveFieldToBackend = useCallback(async (key: string, val: number | null) => {
+    try {
+      setSaveStatus('Salvando…');
+      await api.post(`/indicadores/${currentMonth}`, { key, value: val });
+      setSaveStatus('Salvo');
+      setTimeout(() => setSaveStatus(null), 2000);
+    } catch (err) {
+      console.error(`Erro ao salvar indicador ${key}:`, err);
+      setSaveStatus('Erro ao salvar');
+      setTimeout(() => setSaveStatus(null), 3500);
+    }
+  }, [currentMonth]);
+
+  const handleInputChange = (key: string, rawVal: string) => {
+    const val = rawVal === '' ? null : Number(rawVal);
+    if (rawVal !== '' && isNaN(val as number)) return;
+
+    // Immediate optimistic update in state
+    setAllIndicadores(prev => ({
+      ...prev,
+      [currentMonth]: {
+        ...(prev[currentMonth] || { id: currentMonth, mes: currentMonth }),
+        [key]: val,
+      },
+    }));
+
+    // Debounced network save
+    if (saveTimersRef.current[key]) {
+      clearTimeout(saveTimersRef.current[key]);
+    }
+    saveTimersRef.current[key] = setTimeout(() => {
+      saveFieldToBackend(key, val);
+    }, 400);
   };
 
-  const handleSalvar = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setSalvando(true);
-      const res = await api.put<IndicadorMensal>(`/api/indicadores/${mesSelecionado}`, indicador);
-      setIndicador(res);
-      setMsgSucesso(true);
-      setTimeout(() => setMsgSucesso(false), 3000);
-      carregarHistorico();
-    } catch (err) {
-      console.error(err);
-      alert('Erro ao salvar indicadores.');
-    } finally {
-      setSalvando(false);
+  const handleInputBlur = (key: string) => {
+    if (saveTimersRef.current[key]) {
+      clearTimeout(saveTimersRef.current[key]);
+      const val = allIndicadores[currentMonth]?.[key] ?? null;
+      saveFieldToBackend(key, val);
     }
   };
 
-  const navegarMes = (delta: number) => {
-    const [ano, mes] = mesSelecionado.split('-').map(Number);
-    const d = new Date(ano, mes - 1 + delta, 1);
-    const novo = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    setMesSelecionado(novo);
+  const renderSpark = (vals: (number | null | undefined)[]) => {
+    const pts: [number, number][] = vals
+      .map((v, i) => [i, v] as [number, number | null | undefined])
+      .filter((p): p is [number, number] => p[1] != null && !isNaN(p[1]));
+
+    if (pts.length < 2) {
+      return <span style={{ color: 'var(--muted)' }}>—</span>;
+    }
+
+    const w = 84;
+    const h = 26;
+    const numVals = pts.map(p => p[1]);
+    const mx = Math.max(...numVals);
+    const mn = Math.min(...numVals);
+    const rg = mx - mn || 1;
+    const X = (i: number) => (2 + (i * (w - 4)) / (vals.length - 1)).toFixed(1);
+    const Y = (v: number) => (h - 3 - ((v - mn) / rg) * (h - 6)).toFixed(1);
+
+    const line = pts.map(p => `${X(p[0])},${Y(p[1])}`).join(' ');
+    const l = pts[pts.length - 1];
+
+    return (
+      <svg className="spark" width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+        <polygon
+          className="ar"
+          points={`${X(pts[0][0])},${h} ${line} ${X(l[0])},${h}`}
+        />
+        <polyline className="ln" points={line} />
+        <circle className="dt" cx={X(l[0])} cy={Y(l[1])} r="2.6" />
+      </svg>
+    );
   };
 
+  if (loading && Object.keys(allIndicadores).length === 0) {
+    return <div className="empty">Carregando painel de saúde da ala…</div>;
+  }
+
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
+    <div className="stack t-indicadores">
+      {/* Header matching Claude artifact */}
+      <div className="head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
         <div>
-          <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', margin: 0 }}>Indicadores Chave da Ala</h1>
-          <p style={{ margin: '4px 0 0 0', color: 'var(--color-text-muted)' }}>
-            Acompanhamento de frequência sacramental, ordenanças, ministração e vitalidade espiritual
+          <h2 className="with-ico" style={{ display: 'flex', alignItems: 'center', margin: 0 }}>
+            <span
+              className="h-ico"
+              style={{
+                display: 'inline-grid',
+                placeItems: 'center',
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                color: 'var(--tc, #4ade80)',
+                background: 'color-mix(in srgb, var(--tc, #4ade80) 14%, transparent)',
+                marginRight: 10,
+              }}
+            >
+              <svg
+                className="ico"
+                viewBox="0 0 24 24"
+                width={20}
+                height={20}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <circle cx="12" cy="12" r="6" />
+                <circle cx="12" cy="12" r="2" />
+              </svg>
+            </span>
+            Painel de saúde da ala
+          </h2>
+          <p className="sub" style={{ margin: '6px 0 0 0', color: 'var(--muted)', fontSize: '13.5px' }}>
+            Preencha uma vez por mês para transformar o Conselho da Ala de uma reunião de relatórios em uma reunião de ação.
           </p>
         </div>
 
-        {/* Date Selector */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button className="btn btn-secondary" onClick={() => navegarMes(-1)}>
-            <IconChevronLeft size={16} />
-          </button>
-          <input
-            type="month"
-            className="input"
-            value={mesSelecionado}
-            onChange={e => setMesSelecionado(e.target.value)}
-            style={{ fontWeight: 600, width: 170 }}
-          />
-          <button className="btn btn-secondary" onClick={() => navegarMes(1)}>
-            <IconChevronRight size={16} />
-          </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {saveStatus && (
+            <span style={{ fontSize: '12px', color: saveStatus.includes('Erro') ? 'var(--crit)' : 'var(--cons)', fontWeight: 600 }}>
+              {saveStatus}
+            </span>
+          )}
+
+          <div className="mnav">
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => setCurrentMonth(prev => shiftMonth(prev, -1))}
+              aria-label="Mês anterior"
+            >
+              ‹
+            </button>
+            <span className="m">{monthLabel(currentMonth)}</span>
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => setCurrentMonth(prev => shiftMonth(prev, 1))}
+              aria-label="Próximo mês"
+            >
+              ›
+            </button>
+          </div>
         </div>
       </div>
 
-      {loading ? (
-        <div className="card" style={{ padding: 32 }}>Carregando dados do mês...</div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 24 }}>
-          {/* Main Form */}
-          <div className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <h3 style={{ margin: 0 }}>
-                Mês de Referência: <span style={{ color: 'var(--color-primary)' }}>{mesSelecionado}</span>
-              </h3>
-              {msgSucesso && (
-                <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <IconCheck size={14} /> Salvo com sucesso!
-                </span>
-              )}
-            </div>
+      {/* Grid of 11 Cards matching the reference screenshot */}
+      <div className="igrid">
+        {IND.map(item => {
+          const val = currentData[item.key];
+          return (
+            <label className="icell" key={item.key} htmlFor={`ind-${item.key}`}>
+              <span className="a">{item.title}</span>
+              <span className="b">{item.sub}</span>
+              <input
+                className="inp"
+                type="number"
+                inputMode="numeric"
+                min="0"
+                id={`ind-${item.key}`}
+                value={val != null ? val : ''}
+                placeholder="—"
+                disabled={!canWrite}
+                onChange={e => handleInputChange(item.key, e.target.value)}
+                onBlur={() => handleInputBlur(item.key)}
+              />
+            </label>
+          );
+        })}
+      </div>
 
-            <form onSubmit={handleSalvar}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
-                <div>
-                  <label className="label">Presença Média na Sacramental</label>
-                  <input
-                    type="number"
-                    className="input"
-                    value={indicador.sacramentalPresenca || ''}
-                    onChange={e => setIndicador({ ...indicador, sacramentalPresenca: parseInt(e.target.value) || 0 })}
-                    placeholder="Média de pessoas presentes aos domingos"
-                    disabled={!isBishopric}
-                  />
-                  <small style={{ color: 'var(--color-text-muted)' }}>Contagem de frequência nas reuniões de domingo</small>
-                </div>
+      {/* Last 6 Months Table */}
+      <div style={{ marginTop: 12 }}>
+        <h3 style={{ fontSize: '18px', marginBottom: '10px', color: 'var(--ink)' }}>Últimos 6 meses</h3>
+        <div className="tscroll">
+          <table>
+            <thead>
+              <tr>
+                <th>INDICADOR</th>
+                {last6Months.map(m => {
+                  const mm = parseInt(m.split('-')[1], 10);
+                  const abrev = MESES[mm - 1]?.slice(0, 3).toUpperCase() || '—';
+                  return <th key={m}>{abrev}</th>;
+                })}
+                <th>TENDÊNCIA</th>
+              </tr>
+            </thead>
+            <tbody>
+              {IND.map(item => {
+                const vals = last6Months.map(m => {
+                  const mData = allIndicadores[m];
+                  return mData && mData[item.key] != null ? Number(mData[item.key]) : null;
+                });
 
-                <div>
-                  <label className="label">Membros Ativos Estimados</label>
-                  <input
-                    type="number"
-                    className="input"
-                    value={indicador.membrosAtivos || ''}
-                    onChange={e => setIndicador({ ...indicador, membrosAtivos: parseInt(e.target.value) || 0 })}
-                    placeholder="Total de membros que frequentam regularmente"
-                    disabled={!isBishopric}
-                  />
-                  <small style={{ color: 'var(--color-text-muted)' }}>Base de apoio e participação geral</small>
-                </div>
-
-                <div>
-                  <label className="label">Recomendações para o Templo Válidas</label>
-                  <input
-                    type="number"
-                    className="input"
-                    value={indicador.recomendacoesValidas || ''}
-                    onChange={e => setIndicador({ ...indicador, recomendacoesValidas: parseInt(e.target.value) || 0 })}
-                    placeholder="Adultos e jovens com recomendação"
-                    disabled={!isBishopric}
-                  />
-                  <small style={{ color: 'var(--color-text-muted)' }}>Membros dignos de entrar na Casa do Senhor</small>
-                </div>
-
-                <div>
-                  <label className="label">Presença Média na Primária</label>
-                  <input
-                    type="number"
-                    className="input"
-                    value={indicador.primariaPresenca || ''}
-                    onChange={e => setIndicador({ ...indicador, primariaPresenca: parseInt(e.target.value) || 0 })}
-                    placeholder="Crianças presentes aos domingos"
-                    disabled={!isBishopric}
-                  />
-                  <small style={{ color: 'var(--color-text-muted)' }}>Crianças do berçário aos 11 anos</small>
-                </div>
-
-                <div>
-                  <label className="label">Jovens Participando Ativamente</label>
-                  <input
-                    type="number"
-                    className="input"
-                    value={indicador.jovensAtivos || ''}
-                    onChange={e => setIndicador({ ...indicador, jovensAtivos: parseInt(e.target.value) || 0 })}
-                    placeholder="Rapazes e moças de 11 a 18 anos"
-                    disabled={!isBishopric}
-                  />
-                  <small style={{ color: 'var(--color-text-muted)' }}>Presença em atividades e domingo</small>
-                </div>
-
-                <div>
-                  <label className="label">Entrevistas de Ministração Realizadas</label>
-                  <input
-                    type="number"
-                    className="input"
-                    value={indicador.ministracaoEntrevistas || ''}
-                    onChange={e => setIndicador({ ...indicador, ministracaoEntrevistas: parseInt(e.target.value) || 0 })}
-                    placeholder="Total de entrevistas no trimestre"
-                    disabled={!isBishopric}
-                  />
-                  <small style={{ color: 'var(--color-text-muted)' }}>Sociedade de Socorro e Quórum de Élderes</small>
-                </div>
-              </div>
-
-              <div style={{ marginBottom: 20 }}>
-                <label className="label">Anotações e Observações do Bispado</label>
-                <textarea
-                  className="textarea"
-                  rows={4}
-                  value={indicador.observacoes || ''}
-                  onChange={e => setIndicador({ ...indicador, observacoes: e.target.value })}
-                  placeholder="Focos espirituais, metas do conselho para este mês, conversões ou batismos recentes..."
-                  disabled={!isBishopric}
-                />
-              </div>
-
-              {isBishopric && (
-                <button type="submit" className="btn btn-primary" disabled={salvando}>
-                  {salvando ? 'Salvando...' : 'Salvar Indicadores do Mês'}
-                </button>
-              )}
-            </form>
-          </div>
-
-          {/* Sidebar: Historical Trend List */}
-          <div className="card">
-            <h3 style={{ marginTop: 0, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <IconTrendingUp size={18} color="var(--color-primary)" />
-              Histórico Recente
-            </h3>
-            {historico.length === 0 ? (
-              <div style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-                Nenhum mês anterior gravado.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {historico.slice(0, 8).map(h => (
-                  <div
-                    key={h.mes}
-                    onClick={() => setMesSelecionado(h.mes)}
-                    style={{
-                      padding: 10,
-                      borderRadius: 'var(--radius)',
-                      border: h.mes === mesSelecionado ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
-                      background: h.mes === mesSelecionado ? 'var(--color-surface-hover)' : 'var(--color-surface)',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 600 }}>{h.mes}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                        Sacramental: {h.sacramentalPresenca || 0} • Rec: {h.recomendacoesValidas || 0}
-                      </div>
-                    </div>
-                    <span className="badge badge-info" style={{ fontSize: '0.75rem' }}>
-                      Ver
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+                return (
+                  <tr key={item.key}>
+                    <td>{item.title}</td>
+                    {vals.map((v, i) => (
+                      <td key={last6Months[i]} className={i === 5 ? 'cur' : ''}>
+                        {v != null ? v : '—'}
+                      </td>
+                    ))}
+                    <td>{renderSpark(vals)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
     </div>
   );
 };

@@ -61,6 +61,36 @@ router.post('/', requireWrite, async (req, res) => {
     }
 
     const docRef = await db.collection('conf/b/pessoas').add(newDoc);
+
+    // If linked to an organization cargo, register the pending state in conf/b/chamados
+    if (cargoRef?.org && cargoRef?.cargo && (tipo === 'chamado' || !tipo)) {
+      try {
+        const orgRef = db.doc(`conf/b/chamados/${cargoRef.org}`);
+        const orgSnap = await orgRef.get();
+        if (orgSnap.exists) {
+          const orgData = orgSnap.data();
+          const today = new Date().toISOString().split('T')[0];
+          const cargos = (orgData?.cargos || []).map((c: any) => {
+            if (c.id === cargoRef.cargo) {
+              return {
+                ...c,
+                pendente: {
+                  pessoa: newDoc.nome,
+                  pid: docRef.id,
+                  data: newDoc.prazo || today,
+                  etapa: newDoc.detalhe || 'Indicado',
+                },
+              };
+            }
+            return c;
+          });
+          await orgRef.update({ cargos });
+        }
+      } catch (err) {
+        console.error('Error setting pending cargo in POST /pessoas:', err);
+      }
+    }
+
     res.status(201).json({ id: docRef.id, ...newDoc });
   } catch (error) {
     console.error('Error creating pessoa:', error);
@@ -153,8 +183,8 @@ router.post('/:id/advance-chamado', requireWrite, async (req, res) => {
 
     await docRef.update(bodyUpdate);
 
-    // If calling is concluded and has cargoRef, apply automatically to organization
-    if (callingConcluded && p.cargoRef?.org && p.cargoRef?.cargo) {
+    // If calling has cargoRef, synchronize stage or conclude calling in organization
+    if (p.cargoRef?.org && p.cargoRef?.cargo) {
       try {
         const orgRef = db.doc(`conf/b/chamados/${p.cargoRef.org}`);
         const orgSnap = await orgRef.get();
@@ -163,23 +193,36 @@ router.post('/:id/advance-chamado', requireWrite, async (req, res) => {
           const today = new Date().toISOString().split('T')[0];
           const cargos = (orgData?.cargos || []).map((c: any) => {
             if (c.id === p.cargoRef!.cargo) {
-              const hist = c.pessoa
-                ? [{ pessoa: c.pessoa, desde: c.desde || '', ate: today }, ...(c.historico || [])]
-                : (c.historico || []);
-              return {
-                ...c,
-                pessoa: p.nome,
-                desde: today,
-                historico: hist.slice(0, 20),
-                pendente: null,
-              };
+              if (callingConcluded) {
+                const hist = c.pessoa
+                  ? [{ pessoa: c.pessoa, desde: c.desde || '', ate: today }, ...(c.historico || [])]
+                  : (c.historico || []);
+                return {
+                  ...c,
+                  pessoa: p.nome,
+                  desde: today,
+                  historico: hist.slice(0, 20),
+                  pendente: null,
+                };
+              } else {
+                // Update intermediate stage
+                return {
+                  ...c,
+                  pendente: {
+                    ...(c.pendente || {}),
+                    pessoa: p.nome,
+                    pid: id,
+                    etapa: bodyUpdate.detalhe,
+                  },
+                };
+              }
             }
             return c;
           });
           await orgRef.update({ cargos });
         }
       } catch (err) {
-        console.error('Error applying concluded calling to organization:', err);
+        console.error('Error applying calling update to organization:', err);
       }
     }
 
@@ -206,6 +249,8 @@ router.post('/:id/advance-desobrigacao', requireWrite, async (req, res) => {
     const curStep = Number(p.dpasso || 0);
 
     let bodyUpdate: Partial<Pessoa> = {};
+    let desobConcluded = false;
+
     if (curStep < D_FLOW.length - 1) {
       bodyUpdate = {
         dpasso: curStep + 1,
@@ -217,9 +262,41 @@ router.post('/:id/advance-desobrigacao', requireWrite, async (req, res) => {
         status: 'concluido',
         atualizadoEm: Date.now(),
       };
+      desobConcluded = true;
     }
 
     await docRef.update(bodyUpdate);
+
+    // If release is concluded and has cargoRef, mark the calling as vacant in conf/b/chamados
+    if (desobConcluded && p.cargoRef?.org && p.cargoRef?.cargo) {
+      try {
+        const orgRef = db.doc(`conf/b/chamados/${p.cargoRef.org}`);
+        const orgSnap = await orgRef.get();
+        if (orgSnap.exists) {
+          const orgData = orgSnap.data();
+          const today = new Date().toISOString().split('T')[0];
+          const cargos = (orgData?.cargos || []).map((c: any) => {
+            if (c.id === p.cargoRef!.cargo) {
+              const hist = c.pessoa
+                ? [{ pessoa: c.pessoa, desde: c.desde || '', ate: today }, ...(c.historico || [])]
+                : (c.historico || []);
+              return {
+                ...c,
+                pessoa: '',
+                desde: '',
+                historico: hist.slice(0, 20),
+                pendente: null,
+              };
+            }
+            return c;
+          });
+          await orgRef.update({ cargos });
+        }
+      } catch (err) {
+        console.error('Error marking released calling vacant in organization:', err);
+      }
+    }
+
     res.json({ ...p, ...bodyUpdate, id });
   } catch (error) {
     console.error('Error advancing release flow:', error);

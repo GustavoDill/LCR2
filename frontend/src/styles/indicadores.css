@@ -1,4 +1,16 @@
 /* Indicadores */
+.t-indicadores {
+  --tc: #16a34a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .t-indicadores {
+    --tc: #4ade80;
+  }
+}
+:root[data-theme="dark"] .t-indicadores {
+  --tc: #4ade80;
+}
+
 .mnav {
   display: flex;
   align-items: center;
@@ -11,6 +23,7 @@
   font-weight: 600;
   min-width: 150px;
   text-align: center;
+  text-transform: lowercase;
 }
 
 .igrid {
@@ -27,11 +40,17 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  transition: border-color 0.15s ease;
+}
+
+.icell:focus-within {
+  border-color: var(--tc);
 }
 
 .icell .a {
   font-weight: 700;
   font-size: 14px;
+  color: var(--ink);
 }
 
 .icell .b {
@@ -44,6 +63,17 @@
   font-size: 22px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--ink);
+  width: 100%;
+}
+
+.icell input:focus {
+  outline: 2px solid var(--tc);
+  border-color: transparent;
 }
 
 .tscroll {
@@ -87,6 +117,7 @@ tbody tr:last-child td {
 
 td.cur {
   font-weight: 700;
+  color: var(--ink);
 }
 
 .spark {

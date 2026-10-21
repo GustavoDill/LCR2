@@ -8,6 +8,121 @@ router.use(authenticate, requirePermission('chamados'));
 
 const newId = (prefix: string) => prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
+const DEFAULT_ORGANIZACOES = [
+  'Bispado e Secretaria',
+  'Quórum de Élderes e Sociedade de Socorro',
+  'Classes das Moças',
+  'Organizações da ala',
+  'Outros chamados',
+];
+
+router.get('/organizacoes-lista', async (req, res) => {
+  try {
+    const db = getDb();
+    const orgsSnap = await db.collection('conf/b/chamados_orgs').get();
+    const subSnap = await db.collection('conf/b/chamados').get();
+
+    const orgMap = new Map<string, { id: string; nome: string; ordem: number }>();
+
+    // 1. Add configured organizations from chamados_orgs
+    orgsSnap.docs.forEach((doc, idx) => {
+      const data = doc.data();
+      const nome = (data.nome || '').trim();
+      if (nome) {
+        orgMap.set(nome.toLowerCase(), {
+          id: doc.id,
+          nome,
+          ordem: data.ordem ?? idx + 1,
+        });
+      }
+    });
+
+    // 2. Add groups from existing suborganizations
+    subSnap.docs.forEach((doc, idx) => {
+      const data = doc.data();
+      const grupo = (data.grupo || '').trim();
+      if (grupo && !orgMap.has(grupo.toLowerCase())) {
+        orgMap.set(grupo.toLowerCase(), {
+          id: 'grp_' + Buffer.from(grupo).toString('hex').slice(0, 12),
+          nome: grupo,
+          ordem: (data.ordem ?? 10) + idx,
+        });
+      }
+    });
+
+    // 3. Fallback to default organizations if none exist
+    if (orgMap.size === 0) {
+      DEFAULT_ORGANIZACOES.forEach((nome, idx) => {
+        orgMap.set(nome.toLowerCase(), {
+          id: 'def_' + idx,
+          nome,
+          ordem: idx + 1,
+        });
+      });
+    }
+
+    const result = Array.from(orgMap.values()).sort((a, b) => a.ordem - b.ordem);
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching organizações-lista:', error);
+    res.status(500).json({ error: 'Erro ao carregar lista de organizações.' });
+  }
+});
+
+router.post('/organizacoes-lista', requireWrite, async (req, res) => {
+  try {
+    const db = getDb();
+    const { nome } = req.body;
+    if (!nome || !nome.trim()) {
+      return res.status(400).json({ error: 'O nome da organização é obrigatório.' });
+    }
+
+    const cleanNome = nome.trim();
+    const orgsSnap = await db.collection('conf/b/chamados_orgs').get();
+    const newIdStr = newId('grp_');
+    const newOrg = {
+      id: newIdStr,
+      nome: cleanNome,
+      ordem: orgsSnap.size + 1,
+      criadoEm: Date.now(),
+    };
+
+    await db.doc(`conf/b/chamados_orgs/${newIdStr}`).set(newOrg);
+    res.status(201).json(newOrg);
+  } catch (error) {
+    console.error('Error creating organização-lista:', error);
+    res.status(500).json({ error: 'Erro ao criar organização.' });
+  }
+});
+
+router.delete('/organizacoes-lista/:nome', requireWrite, async (req, res) => {
+  try {
+    const db = getDb();
+    const targetNome = decodeURIComponent(req.params.nome).trim().toLowerCase();
+
+    // Delete matching doc in chamados_orgs
+    const orgsSnap = await db.collection('conf/b/chamados_orgs').get();
+    for (const doc of orgsSnap.docs) {
+      if ((doc.data().nome || '').trim().toLowerCase() === targetNome) {
+        await doc.ref.delete();
+      }
+    }
+
+    // Delete all child suborganizations belonging to this group
+    const subSnap = await db.collection('conf/b/chamados').get();
+    for (const doc of subSnap.docs) {
+      if ((doc.data().grupo || '').trim().toLowerCase() === targetNome) {
+        await doc.ref.delete();
+      }
+    }
+
+    res.json({ success: true, nome: req.params.nome });
+  } catch (error) {
+    console.error('Error deleting organização-lista:', error);
+    res.status(500).json({ error: 'Erro ao excluir organização.' });
+  }
+});
+
 router.get('/organizacoes', async (req, res) => {
   try {
     const db = getDb();
@@ -31,7 +146,7 @@ router.post('/organizacoes', requireWrite, async (req, res) => {
     const { nome, grupo } = req.body;
 
     if (!nome || !nome.trim()) {
-      return res.status(400).json({ error: 'O nome da organização é obrigatório.' });
+      return res.status(400).json({ error: 'O nome da suborganização é obrigatório.' });
     }
 
     const orgId = newId('o');
@@ -50,7 +165,26 @@ router.post('/organizacoes', requireWrite, async (req, res) => {
     res.status(201).json(newOrg);
   } catch (error) {
     console.error('Error creating organização:', error);
-    res.status(500).json({ error: 'Erro ao criar organização.' });
+    res.status(500).json({ error: 'Erro ao criar suborganização.' });
+  }
+});
+
+router.delete('/organizacoes/:orgId', requireWrite, async (req, res) => {
+  try {
+    const db = getDb();
+    const { orgId } = req.params;
+
+    const orgRef = db.doc(`conf/b/chamados/${orgId}`);
+    const snap = await orgRef.get();
+    if (!snap.exists) {
+      return res.status(404).json({ error: 'Suborganização não encontrada.' });
+    }
+
+    await orgRef.delete();
+    res.json({ success: true, orgId });
+  } catch (error) {
+    console.error('Error deleting suborganização:', error);
+    res.status(500).json({ error: 'Erro ao excluir suborganização.' });
   }
 });
 
