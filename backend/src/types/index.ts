@@ -115,6 +115,14 @@ export interface Organizacao {
   cargos: Cargo[];
 }
 
+export type Suborganizacao = Organizacao;
+
+export interface OrganizacaoItem {
+  id: string;
+  nome: string;
+  ordem?: number;
+}
+
 export interface Membro {
   id: string;
   nome: string;

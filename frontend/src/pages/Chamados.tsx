@@ -1,24 +1,27 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { Organizacao, Cargo, Membro } from '../types';
+import { Organizacao, Cargo, Membro, OrganizacaoItem } from '../types';
 
 export const Chamados: React.FC = () => {
   const { isBishopric, canWrite } = useAuth();
-  const [orgs, setOrgs] = useState<Organizacao[]>([]);
+  const [suborgs, setSuborgs] = useState<Organizacao[]>([]);
+  const [orgList, setOrgList] = useState<OrganizacaoItem[]>([]);
   const [members, setMembers] = useState<Membro[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState<'todos' | 'vagos' | 'troca'>('todos');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Modal states
-  const [activeOrg, setActiveOrg] = useState<Organizacao | null>(null);
+  // Modals state
+  const [activeSubOrg, setActiveSubOrg] = useState<Organizacao | null>(null);
   const [activeCargo, setActiveCargo] = useState<Cargo | null>(null);
   const [isSwapModalOpen, setIsSwapModalOpen] = useState(false);
   const [isAddCargoModalOpen, setIsAddCargoModalOpen] = useState(false);
+  const [isAddSubOrgModalOpen, setIsAddSubOrgModalOpen] = useState(false);
   const [isAddOrgModalOpen, setIsAddOrgModalOpen] = useState(false);
+  const [selectedParentOrgForSubOrg, setSelectedParentOrgForSubOrg] = useState('');
 
-  // Swap form states
+  // Swap form state
   const [swapNome, setSwapNome] = useState('');
   const [swapFilterText, setSwapFilterText] = useState('');
   const [swapModo, setSwapModo] = useState<'agora' | 'processo'>('agora');
@@ -26,26 +29,65 @@ export const Chamados: React.FC = () => {
   const [swapTitulo, setSwapTitulo] = useState('');
   const [desobrigarAtual, setDesobrigarAtual] = useState(true);
 
-  // Add cargo states
+  // Add cargo form state
   const [newCargoTitulo, setNewCargoTitulo] = useState('');
   const [newCargoPessoa, setNewCargoPessoa] = useState('');
   const [newCargoFilterText, setNewCargoFilterText] = useState('');
 
-  // Add org states
+  // Add suborg form state
+  const [newSubOrgNome, setNewSubOrgNome] = useState('');
+  const [newSubOrgGrupo, setNewSubOrgGrupo] = useState('');
+
+  // Add parent org form state
   const [newOrgNome, setNewOrgNome] = useState('');
-  const [newOrgGrupo, setNewOrgGrupo] = useState('Organizações da ala');
 
   // Load data
   useEffect(() => {
-    loadOrgs();
-    loadMembers();
+    loadAllData();
   }, [isBishopric]);
 
-  // All useMemo hooks placed at the top level
+  async function loadAllData() {
+    try {
+      await Promise.all([loadOrgsList(), loadSubOrgs(), loadMembers()]);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadOrgsList() {
+    try {
+      const data = await api.get<OrganizacaoItem[]>('/chamados/organizacoes-lista');
+      setOrgList(data);
+    } catch (err) {
+      console.error('Erro ao carregar lista de organizações:', err);
+    }
+  }
+
+  async function loadSubOrgs() {
+    try {
+      const data = await api.get<Organizacao[]>('/chamados/organizacoes');
+      setSuborgs(data);
+    } catch (err) {
+      console.error('Erro ao carregar suborganizações:', err);
+    }
+  }
+
+  async function loadMembers() {
+    try {
+      const res = await api.get<{ members: Membro[] }>('/membros');
+      setMembers(res.members || []);
+    } catch (err) {
+      console.debug('Membros não puderam ser carregados:', err);
+    }
+  }
+
+  // Member callings lookup
   const memberCallingsMap = useMemo(() => {
     const map: Record<string, string[]> = {};
-    orgs.forEach(org => {
-      org.cargos.forEach(c => {
+    suborgs.forEach(org => {
+      (org.cargos || []).forEach(c => {
         if (c.pessoa) {
           const k = c.pessoa.toLowerCase().trim();
           if (!map[k]) map[k] = [];
@@ -54,7 +96,7 @@ export const Chamados: React.FC = () => {
       });
     });
     return map;
-  }, [orgs]);
+  }, [suborgs]);
 
   const filteredMembersForSwap = useMemo(() => {
     const q = swapFilterText.trim().toLowerCase();
@@ -72,34 +114,51 @@ export const Chamados: React.FC = () => {
     );
   }, [newCargoFilterText, members]);
 
-  const allCargos = useMemo(() => orgs.flatMap(g => g.cargos.map(c => ({ g, c }))), [orgs]);
+  // Overall Statistics
+  const allCargos = useMemo(() => suborgs.flatMap(g => (g.cargos || []).map(c => ({ g, c }))), [suborgs]);
   const totalCargos = useMemo(() => allCargos.filter(x => !x.c.fixo).length, [allCargos]);
   const preenchidos = useMemo(() => allCargos.filter(x => !x.c.fixo && x.c.pessoa).length, [allCargos]);
   const vagos = useMemo(() => totalCargos - preenchidos, [totalCargos, preenchidos]);
   const trocas = useMemo(() => allCargos.filter(x => x.c.pendente).length, [allCargos]);
 
-  async function loadOrgs() {
-    try {
-      const data = await api.get<Organizacao[]>('/chamados/organizacoes');
-      setOrgs(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // Grouped hierarchy: Level 1 (Organização) -> Level 2 (Suborganização) -> Level 3 (Chamados)
+  const groupedHierarchy = useMemo(() => {
+    // Collect all unique organization group names
+    const orgNamesSet = new Set<string>();
+    orgList.forEach(o => {
+      if (o.nome?.trim()) orgNamesSet.add(o.nome.trim());
+    });
+    suborgs.forEach(s => {
+      if (s.grupo?.trim()) orgNamesSet.add(s.grupo.trim());
+    });
 
-  async function loadMembers() {
-    try {
-      const res = await api.get<{ members: Membro[] }>('/membros');
-      setMembers(res.members || []);
-    } catch (err) {
-      console.debug('Membros não puderam ser carregados:', err);
-    }
-  }
+    const groups: { nome: string; suborgs: Organizacao[] }[] = [];
+    orgNamesSet.forEach(orgNome => {
+      const children = suborgs.filter(s => (s.grupo || 'Outros').trim().toLowerCase() === orgNome.toLowerCase());
+      groups.push({
+        nome: orgNome,
+        suborgs: children,
+      });
+    });
 
-  function openSwapModal(org: Organizacao, cargo: Cargo) {
-    setActiveOrg(org);
+    return groups;
+  }, [orgList, suborgs]);
+
+  // Filter check
+  const q = searchQuery.toLowerCase().trim();
+  const matchFilter = (c: Cargo, suborg: Organizacao, orgNome: string) => {
+    if (filterType === 'vagos' && (c.pessoa || c.fixo)) return false;
+    if (filterType === 'troca' && !c.pendente) return false;
+    if (q) {
+      const txt = `${c.titulo} ${c.pessoa || ''} ${suborg.nome} ${orgNome} ${c.pendente?.pessoa || ''}`.toLowerCase();
+      if (!txt.includes(q)) return false;
+    }
+    return true;
+  };
+
+  // Modal Triggers
+  function openSwapModal(suborg: Organizacao, cargo: Cargo) {
+    setActiveSubOrg(suborg);
     setActiveCargo(cargo);
     setSwapNome(cargo.pessoa || '');
     setSwapFilterText('');
@@ -110,27 +169,40 @@ export const Chamados: React.FC = () => {
     setIsSwapModalOpen(true);
   }
 
-  function openAddCargoModal(org: Organizacao) {
-    setActiveOrg(org);
+  function openAddCargoModal(suborg: Organizacao) {
+    setActiveSubOrg(suborg);
     setNewCargoTitulo('');
     setNewCargoPessoa('');
     setNewCargoFilterText('');
     setIsAddCargoModalOpen(true);
   }
 
+  function openAddSubOrgModal(parentOrgNome?: string) {
+    const initialParent = parentOrgNome || (orgList[0]?.nome || 'Bispado e Secretaria');
+    setSelectedParentOrgForSubOrg(initialParent);
+    setNewSubOrgGrupo(initialParent);
+    setNewSubOrgNome('');
+    setIsAddSubOrgModalOpen(true);
+  }
+
+  function openAddOrgModal() {
+    setNewOrgNome('');
+    setIsAddOrgModalOpen(true);
+  }
+
+  // Submit Handlers
   async function handleSwapSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!activeOrg || !activeCargo) return;
+    if (!activeSubOrg || !activeCargo) return;
 
-    // If "(Nenhum)" is selected (empty string)
     if (!swapNome.trim()) {
       if (activeCargo.pessoa) {
         try {
-          await api.post(`/chamados/organizacoes/${activeOrg.id}/cargos/${activeCargo.id}/vagar`, {
+          await api.post(`/chamados/organizacoes/${activeSubOrg.id}/cargos/${activeCargo.id}/vagar`, {
             data: swapData,
           });
           setIsSwapModalOpen(false);
-          loadOrgs();
+          loadSubOrgs();
         } catch (err: any) {
           alert(err.message || 'Erro ao deixar chamado vago');
         }
@@ -142,7 +214,7 @@ export const Chamados: React.FC = () => {
     }
 
     try {
-      await api.post(`/chamados/organizacoes/${activeOrg.id}/cargos/${activeCargo.id}/swap`, {
+      await api.post(`/chamados/organizacoes/${activeSubOrg.id}/cargos/${activeCargo.id}/swap`, {
         nome: swapNome,
         modo: swapModo,
         data: swapData,
@@ -150,43 +222,107 @@ export const Chamados: React.FC = () => {
         desobrigarAtual,
       });
       setIsSwapModalOpen(false);
-      loadOrgs();
+      loadSubOrgs();
     } catch (err: any) {
       alert(err.message || 'Erro ao atualizar chamado');
     }
   }
 
   async function handleVagar() {
-    if (!activeOrg || !activeCargo) return;
+    if (!activeSubOrg || !activeCargo) return;
     if (!confirm('Deseja deixar este chamado vago?')) return;
 
     try {
-      await api.post(`/chamados/organizacoes/${activeOrg.id}/cargos/${activeCargo.id}/vagar`, {
+      await api.post(`/chamados/organizacoes/${activeSubOrg.id}/cargos/${activeCargo.id}/vagar`, {
         data: swapData,
       });
       setIsSwapModalOpen(false);
-      loadOrgs();
+      loadSubOrgs();
     } catch (err: any) {
       alert(err.message || 'Erro ao deixar vago');
     }
   }
 
-  async function handleApplyPending(orgId: string, cargoId: string) {
+  async function handleApplyPending(suborgId: string, cargoId: string) {
     if (!confirm('Concluir a transição e registrar a nova pessoa neste chamado?')) return;
     try {
-      await api.post(`/chamados/organizacoes/${orgId}/cargos/${cargoId}/apply-pending`);
-      loadOrgs();
+      await api.post(`/chamados/organizacoes/${suborgId}/cargos/${cargoId}/apply-pending`);
+      loadSubOrgs();
     } catch (err: any) {
       alert(err.message || 'Erro ao concluir troca');
     }
   }
 
-  async function handleAddCargo(e: React.FormEvent) {
+  // Level 1: Add / Remove Organization
+  async function handleAddOrg(e: React.FormEvent) {
     e.preventDefault();
-    if (!activeOrg || !newCargoTitulo.trim()) return;
+    if (!newOrgNome.trim()) return;
 
     try {
-      await api.post(`/chamados/organizacoes/${activeOrg.id}/cargos`, {
+      await api.post('/chamados/organizacoes-lista', {
+        nome: newOrgNome.trim(),
+      });
+      setIsAddOrgModalOpen(false);
+      setNewOrgNome('');
+      await loadOrgsList();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao criar organização');
+    }
+  }
+
+  async function handleDeleteOrg(orgNome: string) {
+    if (!confirm(`Deseja excluir a organização "${orgNome}" e todas as suas suborganizações e chamados?`)) {
+      return;
+    }
+
+    try {
+      await api.delete(`/chamados/organizacoes-lista/${encodeURIComponent(orgNome)}`);
+      await Promise.all([loadOrgsList(), loadSubOrgs()]);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao excluir organização');
+    }
+  }
+
+  // Level 2: Add / Remove Suborganization
+  async function handleAddSubOrg(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newSubOrgNome.trim() || !newSubOrgGrupo.trim()) return;
+
+    try {
+      await api.post('/chamados/organizacoes', {
+        nome: newSubOrgNome.trim(),
+        grupo: newSubOrgGrupo.trim(),
+        ordem: suborgs.length + 1,
+        cargos: [],
+      });
+      setIsAddSubOrgModalOpen(false);
+      setNewSubOrgNome('');
+      await loadSubOrgs();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao criar suborganização');
+    }
+  }
+
+  async function handleDeleteSubOrg(suborg: Organizacao) {
+    if (!confirm(`Deseja excluir a suborganização "${suborg.nome}" e todos os seus chamados?`)) {
+      return;
+    }
+
+    try {
+      await api.delete(`/chamados/organizacoes/${suborg.id}`);
+      await loadSubOrgs();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao excluir suborganização');
+    }
+  }
+
+  // Level 3: Add / Remove Chamado
+  async function handleAddCargo(e: React.FormEvent) {
+    e.preventDefault();
+    if (!activeSubOrg || !newCargoTitulo.trim()) return;
+
+    try {
+      await api.post(`/chamados/organizacoes/${activeSubOrg.id}/cargos`, {
         titulo: newCargoTitulo.trim(),
         pessoa: newCargoPessoa.trim(),
         desde: newCargoPessoa ? new Date().toISOString().split('T')[0] : '',
@@ -194,43 +330,65 @@ export const Chamados: React.FC = () => {
       setIsAddCargoModalOpen(false);
       setNewCargoTitulo('');
       setNewCargoPessoa('');
-      loadOrgs();
+      await loadSubOrgs();
     } catch (err: any) {
       alert(err.message || 'Erro ao adicionar chamado');
     }
   }
 
-  async function handleAddOrg(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newOrgNome.trim()) return;
+  async function handleDeleteCargo(suborgId: string, cargoId: string, cargoTitulo: string) {
+    if (!confirm(`Deseja excluir o chamado "${cargoTitulo}"?`)) return;
 
     try {
-      await api.post('/chamados/organizacoes', {
-        nome: newOrgNome.trim(),
-        grupo: newOrgGrupo,
-        ordem: orgs.length + 1,
-        cargos: [],
-      });
-      setIsAddOrgModalOpen(false);
-      setNewOrgNome('');
-      loadOrgs();
+      await api.delete(`/chamados/organizacoes/${suborgId}/cargos/${cargoId}`);
+      if (isSwapModalOpen) setIsSwapModalOpen(false);
+      await loadSubOrgs();
     } catch (err: any) {
-      alert(err.message || 'Erro ao criar organização');
+      alert(err.message || 'Erro ao excluir chamado');
     }
   }
 
-  const q = searchQuery.toLowerCase().trim();
-  const matchFilter = (c: Cargo, g: Organizacao) => {
-    if (filterType === 'vagos' && (c.pessoa || c.fixo)) return false;
-    if (filterType === 'troca' && !c.pendente) return false;
-    if (q) {
-      const txt = `${c.titulo} ${c.pessoa || ''} ${g.nome} ${c.pendente?.pessoa || ''}`.toLowerCase();
-      if (!txt.includes(q)) return false;
+  // Contextual icon for suborganization
+  function renderSubOrgIcon(name: string) {
+    const n = name.toLowerCase();
+    if (n.includes('bispado')) {
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 2L4 7v10l8 5 8-5V7l-8-5z" />
+          <path d="M12 22V12" />
+          <path d="M12 12l8-5" />
+          <path d="M12 12L4 7" />
+        </svg>
+      );
     }
-    return true;
-  };
+    if (n.includes('secretaria') || n.includes('executivo')) {
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="4" width="18" height="16" rx="3" />
+          <circle cx="9" cy="10" r="2" />
+          <line x1="15" y1="8" x2="17" y2="8" />
+          <line x1="15" y1="12" x2="17" y2="12" />
+          <line x1="7" y1="16" x2="17" y2="16" />
+        </svg>
+      );
+    }
+    if (n.includes('socorro') || n.includes('moças') || n.includes('primária')) {
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+        </svg>
+      );
+    }
+    return (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+    );
+  }
 
-  // Conditional early returns placed safely AFTER all hooks
   if (!isBishopric) {
     return <div className="notice bisp">Acesso restrito aos membros do Bispado.</div>;
   }
@@ -240,55 +398,74 @@ export const Chamados: React.FC = () => {
   }
 
   return (
-    <div className="stack">
-      <div className="head">
-        <div>
-          <h2>Lista de Chamados</h2>
-          <p className="sub">
-            Quem serve em cada chamado da ala. Toque em “Trocar” para substituir alguém ou em “Preencher” para um chamado vago.
-          </p>
+    <div className="ch-container">
+      {/* Header Bar */}
+      <div className="ch-head">
+        <div className="ch-head-left">
+          <div className="ch-head-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="3" />
+              <circle cx="9" cy="10" r="2" />
+              <line x1="15" y1="8" x2="17" y2="8" />
+              <line x1="15" y1="12" x2="17" y2="12" />
+              <line x1="7" y1="16" x2="17" y2="16" />
+            </svg>
+          </div>
+          <div className="ch-head-text">
+            <h2>Lista de Chamados</h2>
+            <p>
+              Quem serve em cada chamado da ala. Toque em “Trocar” para substituir alguém ou em “Preencher” para um chamado vago.
+            </p>
+          </div>
         </div>
+
         {canWrite && (
-          <button type="button" className="btn ghost" onClick={() => setIsAddOrgModalOpen(true)}>
+          <button type="button" className="btn-add-org-top" onClick={openAddOrgModal}>
             + Organização
           </button>
         )}
       </div>
 
-      <div className="stats">
-        <div className="stat">
+      {/* 4-card Stats Bar */}
+      <div className="ch-stats stats">
+        <div className="ch-stat-card stat">
           <div className="v num">{totalCargos}</div>
           <div className="l">chamados na lista</div>
-          <div className="x">{orgs.length} organizações</div>
+          <div className="x">{suborgs.length} organizações</div>
         </div>
 
-        <div className="stat">
-          <div className="v num" style={{ color: 'var(--cons)' }}>{preenchidos}</div>
+        <div className="ch-stat-card stat">
+          <div className="v num" style={{ color: '#2dd4bf' }}>{preenchidos}</div>
           <div className="l">preenchidos</div>
           <div className="x">{totalCargos ? Math.round((preenchidos / totalCargos) * 100) : 0}% da lista</div>
         </div>
 
-        <div className="stat">
-          <div className="v num" style={{ color: 'var(--crit)' }}>{vagos}</div>
+        <div className="ch-stat-card stat">
+          <div className="v num" style={{ color: '#f87171' }}>{vagos}</div>
           <div className="l">vagos</div>
           <div className="x">possíveis indicações</div>
         </div>
 
-        <div className="stat">
-          <div className="v num" style={{ color: 'var(--warn)' }}>{trocas}</div>
+        <div className="ch-stat-card stat">
+          <div className="v num" style={{ color: '#fbbf24' }}>{trocas}</div>
           <div className="l">trocas em andamento</div>
+          <div className="x">&nbsp;</div>
         </div>
       </div>
 
-      <div className="searchbar">
-        <input
-          className="inp"
-          type="search"
-          placeholder="Buscar por nome, chamado ou organização"
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-        />
-        <div className="chips">
+      {/* Searchbar & Filter Pills */}
+      <div className="ch-searchbar searchbar">
+        <div className="ch-search-input-wrap">
+          <input
+            className="ch-search-input inp"
+            type="search"
+            placeholder="Buscar por nome, chamado ou organização"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+        </div>
+
+        <div className="ch-filter-chips chips">
           {(
             [
               ['todos', 'Todos', totalCargos],
@@ -299,7 +476,7 @@ export const Chamados: React.FC = () => {
             <button
               key={val}
               type="button"
-              className={`chip ${filterType === val ? 'on' : ''}`}
+              className={`ch-chip chip ${filterType === val ? 'on' : ''}`}
               onClick={() => setFilterType(val)}
             >
               {label} <span className="c num">{n}</span>
@@ -308,93 +485,179 @@ export const Chamados: React.FC = () => {
         </div>
       </div>
 
-      <div className="ch-grid">
-        {orgs.map(org => {
-          const matchingCargos = org.cargos.filter(c => matchFilter(c, org));
-          if (!matchingCargos.length && (filterType !== 'todos' || searchQuery)) return null;
+      {/* Hierarchical View: Organização -> Suborganização -> Chamados */}
+      {groupedHierarchy.map(group => {
+        // Filter suborganizations and cargos
+        const matchingSuborgs = group.suborgs
+          .map(suborg => {
+            const matchedCargos = (suborg.cargos || []).filter(c => matchFilter(c, suborg, group.nome));
+            return { suborg, matchedCargos };
+          })
+          .filter(({ matchedCargos, suborg }) => {
+            if (searchQuery || filterType !== 'todos') {
+              return matchedCargos.length > 0;
+            }
+            return true;
+          });
 
-          const fill = org.cargos.filter(c => c.pessoa).length;
+        if (matchingSuborgs.length === 0 && (searchQuery || filterType !== 'todos')) {
+          return null;
+        }
 
-          return (
-            <section key={org.id} className="card ch-org">
-              <div className="ch-oh">
-                <h3>{org.nome}</h3>
-                <span className="row-m num">{fill} de {org.cargos.length}</span>
-              </div>
+        return (
+          <section key={group.nome} className="ch-org-section">
+            {/* Level 1: Organization Header */}
+            <div className="ch-gh">
+              <h3 className="ch-gh-title">{group.nome}</h3>
+              {canWrite && (
+                <div className="ch-gh-actions">
+                  <button
+                    type="button"
+                    className="btn-add-suborg"
+                    onClick={() => openAddSubOrgModal(group.nome)}
+                    title={`Adicionar suborganização em ${group.nome}`}
+                  >
+                    + Suborganização
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-del-org"
+                    onClick={() => handleDeleteOrg(group.nome)}
+                    title={`Excluir organização ${group.nome}`}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </div>
 
-              <div className="list">
-                {matchingCargos.map(cargo => {
-                  const isVago = !cargo.pessoa && !cargo.fixo;
+            {/* Level 2: Suborganizations Grid */}
+            {matchingSuborgs.length === 0 ? (
+              <div className="ch-empty-org">Nenhuma suborganização cadastrada ainda. Toque em “+ Suborganização” acima.</div>
+            ) : (
+              <div className="ch-grid">
+                {matchingSuborgs.map(({ suborg, matchedCargos }) => {
+                  const allSubCargos = suborg.cargos || [];
+                  const fill = allSubCargos.filter(c => c.pessoa).length;
+
                   return (
-                    <div key={cargo.id} className={`ch-row ${isVago ? 'vago' : ''}`}>
-                      <div className="ch-main">
-                        <div className="ch-t">{cargo.titulo}</div>
-                        <div className="ch-p">
-                          {cargo.pessoa ? (
-                            <span>{cargo.pessoa}</span>
-                          ) : (
-                            <span className="ch-vago-tag">Vago</span>
-                          )}
-                          {cargo.desde && <span className="ch-desde">desde {cargo.desde}</span>}
+                    <article key={suborg.id} className="card ch-org">
+                      {/* Suborg Card Header */}
+                      <div className="ch-oh">
+                        <div className="ch-oh-left">
+                          <span className="ch-suborg-icon">{renderSubOrgIcon(suborg.nome)}</span>
+                          <h3>{suborg.nome}</h3>
                         </div>
 
-                        {cargo.pendente && (
-                          <div className="ch-pend">
-                            <span>
-                              <b>Em processo:</b> {cargo.pendente.pessoa} ({cargo.pendente.etapa || 'proposta'})
-                            </span>
-                            {canWrite && (
-                              <button
-                                type="button"
-                                className="btn sm ok"
-                                onClick={() => handleApplyPending(org.id, cargo.id)}
-                              >
-                                Concluir apoio
-                              </button>
-                            )}
-                          </div>
-                        )}
+                        <div className="ch-oh-right">
+                          <span className="ch-suborg-count row-m num">{fill} de {allSubCargos.length}</span>
+                          {canWrite && (
+                            <button
+                              type="button"
+                              className="btn-del-suborg"
+                              onClick={() => handleDeleteSubOrg(suborg)}
+                              title={`Excluir suborganização ${suborg.nome}`}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Cyan accent line */}
+                        <div className="ch-accent-line" />
                       </div>
 
-                      {canWrite && !cargo.fixo && (
-                        <div className="acts">
-                          <button
-                            type="button"
-                            className="btn sm"
-                            onClick={() => openSwapModal(org, cargo)}
-                          >
-                            {!cargo.pessoa ? 'Preencher' : 'Trocar'}
-                          </button>
-                        </div>
+                      {/* Level 3: Chamados List */}
+                      <div className="ch-list list">
+                        {matchedCargos.map(cargo => {
+                          const isVago = !cargo.pessoa && !cargo.fixo;
+                          return (
+                            <div key={cargo.id} className={`ch-row ${isVago ? 'vago' : ''}`}>
+                              <div className="ch-main">
+                                <div className="ch-label">{cargo.titulo}</div>
+                                <div className={`ch-person ${isVago ? 'vago' : ''}`}>
+                                  {cargo.pessoa ? cargo.pessoa : 'Vago'}
+                                </div>
+
+                                {cargo.pendente && (
+                                  <div className="ch-pend-banner">
+                                    <span>
+                                      Em processo: <b>{cargo.pendente.pessoa}</b> ({cargo.pendente.etapa || 'proposta'})
+                                    </span>
+                                    {canWrite && (
+                                      <button
+                                        type="button"
+                                        className="btn-concluir-apoio"
+                                        onClick={() => handleApplyPending(suborg.id, cargo.id)}
+                                      >
+                                        Concluir
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="ch-acts acts">
+                                {canWrite && !cargo.fixo && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className={`btn sm ${isVago ? 'btn-preencher' : 'btn-trocar'}`}
+                                      onClick={() => openSwapModal(suborg, cargo)}
+                                    >
+                                      {isVago ? 'Preencher' : 'Trocar'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn-del-cargo"
+                                      onClick={() => handleDeleteCargo(suborg.id, cargo.id, cargo.titulo)}
+                                      title="Excluir chamado"
+                                    >
+                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <polyline points="3 6 5 6 21 6" />
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                      </svg>
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {canWrite && (
+                        <button
+                          type="button"
+                          className="btn-add-chamado"
+                          onClick={() => openAddCargoModal(suborg)}
+                        >
+                          + Chamado
+                        </button>
                       )}
-                    </div>
+                    </article>
                   );
                 })}
               </div>
+            )}
+          </section>
+        );
+      })}
 
-              {canWrite && (
-                <button
-                  type="button"
-                  className="btn ghost sm"
-                  style={{ alignSelf: 'flex-start', marginTop: 8 }}
-                  onClick={() => openAddCargoModal(org)}
-                >
-                  + Chamado
-                </button>
-              )}
-            </section>
-          );
-        })}
-      </div>
-
-      {/* Modal: Trocar / Preencher Chamado */}
-      {isSwapModalOpen && activeCargo && activeOrg && (
+      {/* Modal 1: Trocar / Preencher Chamado */}
+      {isSwapModalOpen && activeCargo && activeSubOrg && (
         <div className="modal" onClick={() => setIsSwapModalOpen(false)}>
           <div className="sheet" onClick={e => e.stopPropagation()}>
             <h3>
               {!activeCargo.pessoa ? 'Preencher' : 'Trocar'}: {activeCargo.titulo}
             </h3>
-            <p className="sub" style={{ marginTop: -8 }}>{activeOrg.nome}</p>
+            <p className="sub" style={{ marginTop: -8 }}>{activeSubOrg.nome}</p>
 
             <form onSubmit={handleSwapSubmit} className="form">
               <div className="field">
@@ -407,7 +670,6 @@ export const Chamados: React.FC = () => {
                   )}
                 </label>
 
-                {/* Filtro de busca rápida para a lista de membros */}
                 <input
                   className="inp"
                   type="search"
@@ -542,6 +804,13 @@ export const Chamados: React.FC = () => {
                   <button type="button" className="btn ghost" onClick={() => setIsSwapModalOpen(false)}>
                     Cancelar
                   </button>
+                  <button
+                    type="button"
+                    className="btn ghost danger"
+                    onClick={() => handleDeleteCargo(activeSubOrg.id, activeCargo.id, activeCargo.titulo)}
+                  >
+                    Excluir chamado
+                  </button>
                 </div>
                 {activeCargo.pessoa && (
                   <button type="button" className="btn ghost danger" onClick={handleVagar}>
@@ -554,11 +823,11 @@ export const Chamados: React.FC = () => {
         </div>
       )}
 
-      {/* Modal: Adicionar Cargo */}
-      {isAddCargoModalOpen && activeOrg && (
+      {/* Modal 2: Adicionar Chamado */}
+      {isAddCargoModalOpen && activeSubOrg && (
         <div className="modal" onClick={() => setIsAddCargoModalOpen(false)}>
           <div className="sheet" onClick={e => e.stopPropagation()}>
-            <h3>Novo chamado · {activeOrg.nome}</h3>
+            <h3>Novo chamado · {activeSubOrg.nome}</h3>
             <form onSubmit={handleAddCargo} className="form">
               <div className="field">
                 <label>Nome do chamado *</label>
@@ -566,7 +835,7 @@ export const Chamados: React.FC = () => {
                   className="inp"
                   value={newCargoTitulo}
                   onChange={e => setNewCargoTitulo(e.target.value)}
-                  placeholder="Ex.: Professor de Doutrina do Evangelho"
+                  placeholder="Ex.: 1º Conselheiro, Secretário Assistente"
                   required
                 />
               </div>
@@ -581,7 +850,6 @@ export const Chamados: React.FC = () => {
                   )}
                 </label>
 
-                {/* Filtro de busca rápida para a lista de membros */}
                 <input
                   className="inp"
                   type="search"
@@ -597,7 +865,7 @@ export const Chamados: React.FC = () => {
                   onChange={e => setNewCargoPessoa(e.target.value)}
                   style={{ fontSize: '13.5px' }}
                 >
-                  <option value="">(Nenhum)</option>
+                  <option value="">(Nenhum / Chamado Vago)</option>
                   {filteredMembersForNewCargo.map(m => {
                     const callings = memberCallingsMap[m.nome.toLowerCase().trim()];
                     const extra = callings && callings.length > 0 ? ` [⚠️ Já serve: ${callings[0]}]` : '';
@@ -612,28 +880,12 @@ export const Chamados: React.FC = () => {
                     );
                   })}
                 </select>
-
-                {newCargoPessoa && (
-                  <div style={{ marginTop: 6, fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span>
-                      Selecionado: <b>{newCargoPessoa}</b>
-                    </span>
-                    <button
-                      type="button"
-                      className="btn ghost sm"
-                      style={{ padding: '2px 8px', fontSize: '11px' }}
-                      onClick={() => setNewCargoPessoa('')}
-                    >
-                      Limpar para (Nenhum)
-                    </button>
-                  </div>
-                )}
               </div>
 
               <div className="foot">
                 <div className="btns">
                   <button type="submit" className="btn pri">
-                    Adicionar
+                    Adicionar chamado
                   </button>
                   <button type="button" className="btn ghost" onClick={() => setIsAddCargoModalOpen(false)}>
                     Cancelar
@@ -645,11 +897,73 @@ export const Chamados: React.FC = () => {
         </div>
       )}
 
-      {/* Modal: Adicionar Organização */}
+      {/* Modal 3: Adicionar Suborganização (Nível 2) */}
+      {isAddSubOrgModalOpen && (
+        <div className="modal" onClick={() => setIsAddSubOrgModalOpen(false)}>
+          <div className="sheet" onClick={e => e.stopPropagation()}>
+            <h3>Nova suborganização</h3>
+            <p className="sub" style={{ marginTop: -8 }}>
+              Pertence à organização: <b>{newSubOrgGrupo}</b>
+            </p>
+
+            <form onSubmit={handleAddSubOrg} className="form">
+              <div className="field">
+                <label>Organização Pai (Nível 1)</label>
+                <select
+                  className="inp"
+                  value={newSubOrgGrupo}
+                  onChange={e => setNewSubOrgGrupo(e.target.value)}
+                  required
+                >
+                  {orgList.map(o => (
+                    <option key={o.id} value={o.nome}>
+                      {o.nome}
+                    </option>
+                  ))}
+                  {/* Also ensure any other group in suborgs is selectable */}
+                  {Array.from(new Set(suborgs.map(s => s.grupo || 'Outros')))
+                    .filter(g => !orgList.some(o => o.nome === g))
+                    .map(g => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="field">
+                <label>Nome da suborganização *</label>
+                <input
+                  className="inp"
+                  value={newSubOrgNome}
+                  onChange={e => setNewSubOrgNome(e.target.value)}
+                  placeholder="Ex.: Bispado, Secretaria da Ala, Quórum de Élderes"
+                  required
+                />
+              </div>
+
+              <div className="foot">
+                <div className="btns">
+                  <button type="submit" className="btn pri">
+                    Criar suborganização
+                  </button>
+                  <button type="button" className="btn ghost" onClick={() => setIsAddSubOrgModalOpen(false)}>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 4: Adicionar Organização (Nível 1) */}
       {isAddOrgModalOpen && (
         <div className="modal" onClick={() => setIsAddOrgModalOpen(false)}>
           <div className="sheet" onClick={e => e.stopPropagation()}>
             <h3>Nova organização</h3>
+            <p className="sub" style={{ marginTop: -8 }}>
+              Crie uma organização principal (ex.: Bispado e Secretaria, Quórum de Élderes e Sociedade de Socorro, Classes das Moças).
+            </p>
+
             <form onSubmit={handleAddOrg} className="form">
               <div className="field">
                 <label>Nome da organização *</label>
@@ -657,24 +971,9 @@ export const Chamados: React.FC = () => {
                   className="inp"
                   value={newOrgNome}
                   onChange={e => setNewOrgNome(e.target.value)}
-                  placeholder="Ex.: Escola Dominical"
+                  placeholder="Ex.: Bispado e Secretaria, Escola Dominical"
                   required
                 />
-              </div>
-
-              <div className="field">
-                <label>Grupo / Bloco</label>
-                <select
-                  className="inp"
-                  value={newOrgGrupo}
-                  onChange={e => setNewOrgGrupo(e.target.value)}
-                >
-                  <option value="Bispado e secretaria">Bispado e secretaria</option>
-                  <option value="Quórum de Élderes e Sociedade de Socorro">Quórum de Élderes e Sociedade de Socorro</option>
-                  <option value="Classes das Moças">Classes das Moças</option>
-                  <option value="Organizações da ala">Organizações da ala</option>
-                  <option value="Outros chamados">Outros chamados</option>
-                </select>
               </div>
 
               <div className="foot">
