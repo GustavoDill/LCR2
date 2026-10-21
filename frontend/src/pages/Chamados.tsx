@@ -157,12 +157,12 @@ export const Chamados: React.FC = () => {
   };
 
   // Modal Triggers
-  function openSwapModal(suborg: Organizacao, cargo: Cargo) {
+  function openSwapModal(suborg: Organizacao, cargo: Cargo, defaultModo: 'agora' | 'processo' = 'agora') {
     setActiveSubOrg(suborg);
     setActiveCargo(cargo);
     setSwapNome(cargo.pessoa || '');
     setSwapFilterText('');
-    setSwapModo('agora');
+    setSwapModo(defaultModo);
     setSwapData(new Date().toISOString().split('T')[0]);
     setSwapTitulo(cargo.titulo);
     setDesobrigarAtual(Boolean(cargo.pessoa));
@@ -606,10 +606,20 @@ export const Chamados: React.FC = () => {
                               <div className="ch-acts acts">
                                 {canWrite && !cargo.fixo && (
                                   <>
+                                    {isVago && !cargo.pendente && (
+                                      <button
+                                        type="button"
+                                        className="btn sm btn-indicar"
+                                        onClick={() => openSwapModal(suborg, cargo, 'processo')}
+                                        title="Iniciar processo de indicação de chamado"
+                                      >
+                                        Indicar
+                                      </button>
+                                    )}
                                     <button
                                       type="button"
                                       className={`btn sm ${isVago ? 'btn-preencher' : 'btn-trocar'}`}
-                                      onClick={() => openSwapModal(suborg, cargo)}
+                                      onClick={() => openSwapModal(suborg, cargo, 'agora')}
                                     >
                                       {isVago ? 'Preencher' : 'Trocar'}
                                     </button>
@@ -655,7 +665,9 @@ export const Chamados: React.FC = () => {
         <div className="modal" onClick={() => setIsSwapModalOpen(false)}>
           <div className="sheet" onClick={e => e.stopPropagation()}>
             <h3>
-              {!activeCargo.pessoa ? 'Preencher' : 'Trocar'}: {activeCargo.titulo}
+              {swapModo === 'processo'
+                ? `Indicar pessoa: ${activeCargo.titulo}`
+                : (!activeCargo.pessoa ? 'Preencher' : 'Trocar') + `: ${activeCargo.titulo}`}
             </h3>
             <p className="sub" style={{ marginTop: -8 }}>{activeSubOrg.nome}</p>
 

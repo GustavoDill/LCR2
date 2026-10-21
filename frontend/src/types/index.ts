@@ -99,6 +99,7 @@ export interface Cargo {
   id: string;
   titulo: string;
   pessoa?: string;
+  pessoaRef?: { id: string; nome: string };
   desde?: string;
   fixo?: boolean;
   pendente?: {
@@ -145,6 +146,47 @@ export interface MembroMeta {
   importadoEm?: number;
   total?: number;
   temChamado?: boolean;
+}
+
+export interface MembroProfile360 {
+  membro: Membro;
+  chamadosAtivos: {
+    suborgId: string;
+    suborgNome: string;
+    orgGrupo: string;
+    cargoId: string;
+    cargoTitulo: string;
+    desde?: string;
+  }[];
+  historicoChamados: {
+    suborgId: string;
+    suborgNome: string;
+    orgGrupo: string;
+    cargoTitulo: string;
+    desde?: string;
+    ate?: string;
+  }[];
+  processosPipeline: {
+    id: string;
+    tipo: string;
+    detalhe: string;
+    chamado: string;
+    proxima: string;
+    responsavel: string;
+    prazo?: string;
+    status: string;
+    dpasso?: number;
+    cargoRef?: { org: string; cargo: string };
+    criadoEm?: number;
+  }[];
+  designacoes: {
+    id: string;
+    titulo: string;
+    responsavel?: string;
+    prazo?: string;
+    status: 'pendente' | 'andamento' | 'concluida';
+    origem: 'bispado' | 'conselho';
+  }[];
 }
 
 export type SIRSituacao = 'credito' | 'pendencia' | 'risco';

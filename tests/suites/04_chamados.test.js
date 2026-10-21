@@ -117,6 +117,15 @@ export function registerChamadosTests(runner) {
         throw new Error('Botão "+ Chamado" não encontrado');
       }
 
+      // Check for button "Indicar" on vacant callings
+      const btnIndicar = await driver.findElements(By.css('.btn-indicar'));
+      if (btnIndicar.length > 0) {
+        const txt = await btnIndicar[0].getText();
+        if (!txt.includes('Indicar')) {
+          throw new Error(`Texto esperado "Indicar", encontrado "${txt}"`);
+        }
+      }
+
       await takeScreenshot(driver, 'chamados_hierarchy_pass');
     });
 
@@ -135,6 +144,53 @@ export function registerChamadosTests(runner) {
       await cancelBtn.click();
       await driver.sleep(200);
     });
+
+    s.test('Página Chamados e Desobrigações exibe aba Vagas na Ala e seletores integrados', async (driver) => {
+      await driver.get(`${CONFIG.baseUrl}/chamados-desobrigacoes`);
+      const h2 = await driver.wait(until.elementLocated(By.css('h2')), CONFIG.timeout);
+      const text = await h2.getText();
+      if (!text.includes('Chamados e desobrigações')) {
+        throw new Error(`Título inesperado: ${text}`);
+      }
+
+      // Verify "Vagas na ala" tab button
+      const vagosTab = await driver.wait(
+        until.elementLocated(By.xpath("//button[contains(., 'Vagas na ala')]")),
+        CONFIG.timeout
+      );
+      await vagosTab.click();
+      await driver.sleep(300);
+
+      // Verify open modal "+ Indicar chamado"
+      const btnIndicar = await driver.findElement(By.xpath("//button[contains(text(), '+ Indicar chamado')]"));
+      await btnIndicar.click();
+      await driver.sleep(300);
+
+      const modalSheet = await driver.wait(until.elementLocated(By.css('.modal .sheet')), CONFIG.timeout);
+      const modalText = await modalSheet.getText();
+      if (!modalText.includes('Indicar chamado')) {
+        throw new Error(`Modal inesperado: ${modalText}`);
+      }
+
+      // Check that it has smart selectors (Chamado a Preencher optgroups and Membro search input)
+      const selectCargo = await driver.findElement(By.css('.modal select.inp'));
+      const optgroups = await selectCargo.findElements(By.css('optgroup'));
+      if (optgroups.length === 0) {
+        throw new Error('Seletor de chamados não possui optgroups de suborganizações');
+      }
+
+      const searchMembro = await driver.findElement(By.css(".modal input[type='search']"));
+      if (!searchMembro) {
+        throw new Error('Campo de busca de membros não encontrado no modal');
+      }
+
+      const cancelBtn = await driver.findElement(By.xpath("//button[contains(text(), 'Cancelar')]"));
+      await cancelBtn.click();
+      await driver.sleep(200);
+
+      await takeScreenshot(driver, 'chamados_desobrigacoes_integration_pass');
+    });
   });
 }
+
 
