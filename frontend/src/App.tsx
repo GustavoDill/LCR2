@@ -6,6 +6,7 @@ import { Layout } from './components/Layout';
 // Pages
 import { Inicio } from './pages/Inicio';
 import { Designacoes } from './pages/Designacoes';
+import { Mural } from './pages/Mural';
 import { Reuniao } from './pages/Reuniao';
 import { Atas } from './pages/Atas';
 import { ChamadosDesobrigacoes } from './pages/ChamadosDesobrigacoes';
@@ -87,6 +88,16 @@ export const AppRoutes: React.FC = () => {
           <PermissionRoute modulo="designacoes">
             <Layout>
               <Designacoes />
+            </Layout>
+          </PermissionRoute>
+        }
+      />
+      <Route
+        path="/mural"
+        element={
+          <PermissionRoute modulo="mural">
+            <Layout>
+              <Mural />
             </Layout>
           </PermissionRoute>
         }

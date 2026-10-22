@@ -17,6 +17,7 @@ export const TABS: TabInfo[] = [
   { id: 'inicio', path: '/', l: 'Visão geral', i: 'grid', c: '#60a5fa' },
   { id: 'reuniao', path: '/reuniao', l: 'Reunião', i: 'board', c: '#f472b6' },
   { id: 'designacoes', path: '/designacoes', l: 'Designações', i: 'checks', c: '#22d3ee' },
+  { id: 'mural', path: '/mural', l: 'Mural Semanal', i: 'image', c: '#f59e0b' },
   { id: 'chamdes', path: '/chamados-desobrigacoes', l: 'Chamados e desobrigações', i: 'userplus', c: '#c084fc', b: true },
   { id: 'pessoas', path: '/pessoas', l: 'Pessoas', i: 'heart', c: '#fb923c', b: true },
   { id: 'chamados', path: '/chamados', l: 'Lista de Chamados', i: 'idcard', c: '#38bdf8', b: true },
@@ -32,7 +33,7 @@ export const TABS: TabInfo[] = [
 ];
 
 export const NAV_GROUPS = [
-  { g: 'Reuniões', items: ['inicio', 'reuniao', 'designacoes', 'chamdes', 'atas', 'agenda', 'atividades', 'natal'] },
+  { g: 'Reuniões', items: ['inicio', 'reuniao', 'designacoes', 'mural', 'chamdes', 'atas', 'agenda', 'atividades', 'natal'] },
   { g: 'Acompanhamento', items: ['pessoas', 'chamados', 'membros', 'seminario', 'indicadores'] },
   { g: 'Administração', items: ['financeiro', 'importar'] },
 ];
