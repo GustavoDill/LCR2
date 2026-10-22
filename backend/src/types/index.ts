@@ -377,3 +377,49 @@ export interface IndicadorMensal {
   autossuf?: number | null;
   [key: string]: any;
 }
+
+
+export interface MuralAlmocoItem {
+  dia: string;
+  diaSemana: string;
+  responsavel: string;
+  destaque?: boolean;
+}
+
+export interface MuralDiscursanteDom {
+  data: string;
+  nomes: string;
+}
+
+export interface MuralLimpezaItem {
+  responsavel: string;
+  local: string;
+}
+
+export interface MuralEstudoSemana {
+  periodo: string;
+  escrituras: string;
+  tema: string;
+  imagemDataUrl?: string;
+}
+
+export interface MuralAnuncioItem {
+  titulo: string;
+  texto: string;
+  link?: string;
+}
+
+export interface MuralData {
+  dataTopo: string;
+  alaTitulo: string;
+  institutoTexto: string;
+  seminarioTexto: string;
+  mesAlmoco: string;
+  almocoSisteres: MuralAlmocoItem[];
+  discursantes: MuralDiscursanteDom[];
+  limpezaCapela: MuralLimpezaItem[];
+  paoSacramento: string;
+  estudoSemana: MuralEstudoSemana;
+  anuncios: MuralAnuncioItem[];
+  atualizadoEm?: number;
+}

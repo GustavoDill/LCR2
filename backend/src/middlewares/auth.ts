@@ -16,6 +16,7 @@ export function getDefaultPermissions(role: UserRole): UserPermissions {
       inicio: true,
       reuniao: true,
       designacoes: true,
+      mural: true,
       chamados: true,
       pessoas: true,
       membros: true,
@@ -35,6 +36,7 @@ export function getDefaultPermissions(role: UserRole): UserPermissions {
       inicio: true,
       reuniao: true,
       designacoes: true,
+      mural: true,
       chamados: true,
       pessoas: false,
       membros: true, // Leader can view ward directory / their org
@@ -54,6 +56,7 @@ export function getDefaultPermissions(role: UserRole): UserPermissions {
     inicio: true,
     reuniao: true,
     designacoes: true,
+    mural: true,
     chamados: false,
     pessoas: false,
     membros: false,
