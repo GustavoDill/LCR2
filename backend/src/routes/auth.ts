@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticate, requirePermission } from '../middlewares/auth.js';
+import { authenticate, requirePermission, isSystemAdminUid } from '../middlewares/auth.js';
 import { getAuth, getDb } from '../config/firebase.js';
 import { UserProfile } from '../types/index.js';
 import {
@@ -129,6 +129,18 @@ router.put('/users/:uid', authenticate, requirePermission('gerenciamento', true)
     }
 
     const currentData = doc.data() as any;
+
+    if (isSystemAdminUid(uid)) {
+      if (ativo === false) {
+        res.status(400).json({ error: 'A conta do Administrador do Sistema não pode ser desativada.' });
+        return;
+      }
+      if (role && role !== 'bispado') {
+        res.status(400).json({ error: 'O perfil do Administrador do Sistema deve permanecer como Bispado.' });
+        return;
+      }
+    }
+
     const targetRole = role || currentData.role || 'conselho';
     const isBishop = targetRole === 'bispado';
     const finalPermissoes = permissoes !== undefined ? permissoes : (currentData.permissoes || {});

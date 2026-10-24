@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { getDb } from '../config/firebase.js';
-import { authenticate, requireBishopric, requireWrite } from '../middlewares/auth.js';
+import { authenticate, requirePermission, requireWrite } from '../middlewares/auth.js';
 import { SIRRelatorio, SIREstaca } from '../types/index.js';
 
 const router = Router();
-router.use(authenticate, requireBishopric);
+router.use(authenticate, requirePermission('seminario', false));
 
 // Seed data from reference screenshot
 export const SEED_SIR = {

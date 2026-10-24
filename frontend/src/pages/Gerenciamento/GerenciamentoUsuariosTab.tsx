@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UserProfile, UserRole } from '../../types';
 import { api } from '../../api/client';
+import { isSystemAdminUid } from '../../context/AuthContext';
 import { IconCheck, IconTrash, IconEdit, IconShield, IconSearch } from '../../components/Icons';
 import { ORGANIZACOES_ALA } from './gerenciamentoConstants';
 
@@ -303,6 +304,11 @@ export const GerenciamentoUsuariosTab: React.FC<GerenciamentoUsuariosTabProps> =
                           <div>
                             <div style={{ fontWeight: 600, color: 'var(--color-text)', display: 'flex', alignItems: 'center', gap: 6 }}>
                               {u.displayName || u.name || 'Sem nome'}
+                              {isSystemAdminUid(u.uid) && (
+                                <span className="badge badge-warning" style={{ fontSize: '0.68rem', padding: '2px 6px', fontWeight: 700 }} title="Conta Master do Sistema (Protegida)">
+                                  👑 Sistema
+                                </span>
+                              )}
                               {isCurrent && (
                                 <span className="badge badge-info" style={{ fontSize: '0.7rem', padding: '2px 6px' }}>
                                   Você
@@ -375,18 +381,18 @@ export const GerenciamentoUsuariosTab: React.FC<GerenciamentoUsuariosTabProps> =
                         <button
                           type="button"
                           onClick={() => handleToggleAtivo(u)}
-                          disabled={isCurrent || isSavingThis}
+                          disabled={isCurrent || isSystemAdminUid(u.uid) || isSavingThis}
                           style={{
                             padding: '4px 10px',
                             borderRadius: 999,
                             border: 'none',
                             fontSize: '0.75rem',
                             fontWeight: 600,
-                            cursor: isCurrent ? 'default' : 'pointer',
+                            cursor: (isCurrent || isSystemAdminUid(u.uid)) ? 'default' : 'pointer',
                             background: isAtivo ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
                             color: isAtivo ? '#16a34a' : '#dc2626',
                           }}
-                          title={isCurrent ? 'Você não pode desativar seu próprio acesso' : 'Clique para alternar o status ativo/inativo'}
+                          title={isSystemAdminUid(u.uid) ? 'Conta Master do Sistema (não pode ser desativada)' : isCurrent ? 'Você não pode desativar seu próprio acesso' : 'Clique para alternar o status ativo/inativo'}
                         >
                           {isAtivo ? '● Ativo' : '○ Inativo'}
                         </button>
