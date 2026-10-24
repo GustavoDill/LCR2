@@ -48,15 +48,93 @@ export const ReuniaoHeader: React.FC<ReuniaoHeaderProps> = ({
         “{MEET_INFO[activeMeeting.tipo].q}”
       </p>
 
-      <div className="field">
-        <label>Presentes</label>
-        <input
-          className="inp"
-          placeholder="Ex.: Bispo, 1º Conselheiro, Secretário Executivo"
-          value={activeMeeting.notas?._pres || ''}
-          onChange={e => onNoteChange('_pres', e.target.value)}
-          readOnly={!canWrite}
-        />
+      {/* Sugestão 1: Card Devocional e Presenças da Reunião */}
+      <div className="devocional-card">
+        <div className="devocional-header">
+          <div className="devocional-title-group">
+            <div className="devocional-icon-badge" aria-hidden="true">
+              🙏
+            </div>
+            <div className="devocional-titles">
+              <h4>Devocional e Presença da Reunião</h4>
+              <p>Registro de orações, mensagem espiritual e líderes presentes</p>
+            </div>
+          </div>
+          <span className="devocional-badge-status">
+            Salvo automaticamente
+          </span>
+        </div>
+
+        <div className="devocional-grid">
+          {/* Oração Inicial */}
+          <div className="devocional-cell">
+            <div className="devocional-cell-top">
+              <label htmlFor="dev-oracao-ini" className="devocional-label" style={{ color: 'var(--bisp)' }}>
+                <span>🙏</span> Oração Inicial
+              </label>
+              <span className="devocional-tag">Abertura</span>
+            </div>
+            <input
+              id="dev-oracao-ini"
+              className="devocional-input"
+              placeholder="Quem ofereceu a oração inicial?"
+              value={activeMeeting.notas?._oracaoAbertura || activeMeeting.oracaoAbertura || ''}
+              onChange={e => onNoteChange('_oracaoAbertura', e.target.value)}
+              readOnly={!canWrite}
+            />
+          </div>
+
+          {/* Mensagem Espiritual */}
+          <div className="devocional-cell">
+            <div className="devocional-cell-top">
+              <label htmlFor="dev-mensagem" className="devocional-label" style={{ color: activeMeeting.tipo === 'bispado' ? 'var(--bisp)' : 'var(--cons)' }}>
+                <span>📖</span> Mensagem Espiritual
+              </label>
+              <span className="devocional-tag">Tema / Escritura</span>
+            </div>
+            <input
+              id="dev-mensagem"
+              className="devocional-input"
+              placeholder="Tema, escritura ou orador..."
+              value={activeMeeting.notas?._pensamentoEspiritual || activeMeeting.pensamentoEspiritual || ''}
+              onChange={e => onNoteChange('_pensamentoEspiritual', e.target.value)}
+              readOnly={!canWrite}
+            />
+          </div>
+
+          {/* Oração Final */}
+          <div className="devocional-cell">
+            <div className="devocional-cell-top">
+              <label htmlFor="dev-oracao-fim" className="devocional-label" style={{ color: 'var(--cons)' }}>
+                <span>✨</span> Oração Final
+              </label>
+              <span className="devocional-tag">Encerramento</span>
+            </div>
+            <input
+              id="dev-oracao-fim"
+              className="devocional-input"
+              placeholder="Quem fará a oração final?"
+              value={activeMeeting.notas?._oracaoEncerramento || activeMeeting.oracaoEncerramento || ''}
+              onChange={e => onNoteChange('_oracaoEncerramento', e.target.value)}
+              readOnly={!canWrite}
+            />
+          </div>
+        </div>
+
+        {/* Presentes */}
+        <div className="devocional-presentes">
+          <label htmlFor="dev-presentes" className="lbl" style={{ marginBottom: 4, display: 'block' }}>
+            Líderes Presentes
+          </label>
+          <input
+            id="dev-presentes"
+            className="inp"
+            placeholder="Ex.: Bispo, 1º Conselheiro, Secretário Executivo, Pres. Sociedade de Socorro..."
+            value={activeMeeting.notas?._pres || ''}
+            onChange={e => onNoteChange('_pres', e.target.value)}
+            readOnly={!canWrite}
+          />
+        </div>
       </div>
     </>
   );

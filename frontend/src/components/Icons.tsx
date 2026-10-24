@@ -33,6 +33,7 @@ export const ICONS: Record<string, string> = {
   sparkles: '<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/>',
   chevronLeft: '<polyline points="15 18 9 12 15 6"/>',
   chevronRight: '<polyline points="9 18 15 12 9 6"/>',
+  edit: '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>',
 };
 
 interface IconProps {
@@ -79,3 +80,4 @@ export const IconChevronLeft: React.FC<IconProps> = (props) => <Icon name="chevr
 export const IconChevronRight: React.FC<IconProps> = (props) => <Icon name="chevronRight" {...props} />;
 export const IconTrendingUp: React.FC<IconProps> = (props) => <Icon name="trend" {...props} />;
 export const IconAlertTriangle: React.FC<IconProps> = (props) => <Icon name="alert" {...props} />;
+export const IconEdit: React.FC<IconProps> = (props) => <Icon name="edit" {...props} />;

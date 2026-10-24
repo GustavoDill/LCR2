@@ -123,9 +123,12 @@ export const Reuniao: React.FC = () => {
 
       const targetId = (location.state as any)?.meetingId;
       if (targetId) {
-        const found = live.find(m => m.id === targetId);
+        const found = live.find(m => m.id === targetId) || atas.find(m => m.id === targetId);
         if (found) {
-          setActiveMeeting(found);
+          setActiveMeeting({ ...found, status: 'aberta' });
+          if (found.tipo && PAUTA[found.tipo]) {
+            setOpenSections(new Set([PAUTA[found.tipo][0].k]));
+          }
           setLoading(false);
           return;
         }

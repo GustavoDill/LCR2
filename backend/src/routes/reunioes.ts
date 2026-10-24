@@ -6,7 +6,7 @@ import { Ata, MeetingType } from '../types/index.js';
 const router = Router();
 const ataCol = (t: MeetingType) => (t === 'bispado' ? 'conf/b/atas' : 'atas');
 
-router.get('/', authenticate, async (req, res) => {
+const getAtasHandler = async (req: any, res: any) => {
   try {
     const db = getDb();
     const isBisp = req.user?.isBishopric ?? false;
@@ -32,6 +32,36 @@ router.get('/', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Error fetching atas:', error);
     res.status(500).json({ error: 'Erro ao carregar atas.' });
+  }
+};
+
+router.get('/', authenticate, getAtasHandler);
+router.get('/atas', authenticate, getAtasHandler);
+
+router.put('/:id', authenticate, requireWrite, async (req, res) => {
+  try {
+    const db = getDb();
+    const { id } = req.params;
+    const { tipo = 'conselho' } = req.body;
+
+    if (tipo === 'bispado' && !req.user?.isBishopric) {
+      return res.status(403).json({ error: 'Acesso restrito.' });
+    }
+
+    const docRef = db.doc(`${ataCol(tipo)}/${id}`);
+    const snap = await docRef.get();
+    if (!snap.exists) {
+      return res.status(404).json({ error: 'Reunião não encontrada.' });
+    }
+
+    const updatedData = { ...req.body };
+    delete updatedData.id;
+
+    await docRef.update(updatedData);
+    res.json({ id, ...snap.data(), ...updatedData });
+  } catch (error) {
+    console.error('Error updating meeting details:', error);
+    res.status(500).json({ error: 'Erro ao atualizar dados da reunião.' });
   }
 });
 
@@ -165,15 +195,30 @@ router.post('/:id/reopen', authenticate, requireWrite, async (req, res) => {
   try {
     const db = getDb();
     const { id } = req.params;
-    const { tipo = 'conselho' } = req.body;
+    let { tipo } = req.body || {};
+
+    if (!tipo) {
+      const consDoc = await db.doc(`atas/${id}`).get();
+      if (consDoc.exists) {
+        tipo = 'conselho';
+      } else {
+        const bispDoc = await db.doc(`conf/b/atas/${id}`).get();
+        if (bispDoc.exists) {
+          tipo = 'bispado';
+        } else {
+          return res.status(404).json({ error: 'Reunião não encontrada.' });
+        }
+      }
+    }
 
     if (tipo === 'bispado' && !req.user?.isBishopric) {
-      return res.status(403).json({ error: 'Acesso restrito.' });
+      return res.status(403).json({ error: 'Acesso restrito ao Bispado.' });
     }
 
     const docRef = db.doc(`${ataCol(tipo)}/${id}`);
     await docRef.update({
       status: 'aberta',
+      inicioEm: Date.now(),
     });
 
     res.json({ success: true, id, status: 'aberta' });
@@ -183,22 +228,39 @@ router.post('/:id/reopen', authenticate, requireWrite, async (req, res) => {
   }
 });
 
-router.delete('/:id/discard', authenticate, requireWrite, async (req, res) => {
+const deleteMeetingHandler = async (req: any, res: any) => {
   try {
     const db = getDb();
     const { id } = req.params;
-    const { tipo = 'conselho' } = req.query;
+    let tipo = (req.query.tipo || req.body?.tipo) as MeetingType;
 
-    if (tipo === 'bispado' && !req.user?.isBishopric) {
-      return res.status(403).json({ error: 'Acesso restrito.' });
+    if (!tipo) {
+      const consDoc = await db.doc(`atas/${id}`).get();
+      if (consDoc.exists) {
+        tipo = 'conselho';
+      } else {
+        const bispDoc = await db.doc(`conf/b/atas/${id}`).get();
+        if (bispDoc.exists) {
+          tipo = 'bispado';
+        } else {
+          return res.status(404).json({ error: 'Ata não encontrada.' });
+        }
+      }
     }
 
-    await db.doc(`${ataCol(tipo as MeetingType)}/${id}`).delete();
+    if (tipo === 'bispado' && !req.user?.isBishopric) {
+      return res.status(403).json({ error: 'Acesso restrito ao Bispado.' });
+    }
+
+    await db.doc(`${ataCol(tipo)}/${id}`).delete();
     res.json({ success: true, id });
   } catch (error) {
-    console.error('Error discarding meeting:', error);
-    res.status(500).json({ error: 'Erro ao descartar reunião.' });
+    console.error('Error deleting meeting:', error);
+    res.status(500).json({ error: 'Erro ao excluir ata.' });
   }
-});
+};
+
+router.delete('/:id', authenticate, requireWrite, deleteMeetingHandler);
+router.delete('/:id/discard', authenticate, requireWrite, deleteMeetingHandler);
 
 export default router;

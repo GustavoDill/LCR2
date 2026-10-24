@@ -60,6 +60,9 @@ export interface Ata {
   status: MeetingStatus;
   inicioEm?: number;
   fimEm?: number;
+  oracaoAbertura?: string;
+  pensamentoEspiritual?: string;
+  oracaoEncerramento?: string;
   notas: Record<string, string>; // sectionKey => text, '_pres' for attendees
   tratados: Record<string, boolean>; // sectionKey => boolean
 }
@@ -327,11 +330,14 @@ export interface NatalEvento {
   id: string;
   nome?: string;
   data?: string;
+  horario?: string;
   inicio?: string;
   local?: string;
   tema?: string;
+  foco?: string;
   publico?: string;
   orcamento?: number;
+  orcamentoTotal?: number;
   atualizadoEm?: number;
 }
 
@@ -352,6 +358,10 @@ export interface NatalGasto {
   id: string;
   descricao: string;
   valor: number;
+  valorEstimado?: number;
+  valorReal?: number;
+  categoria?: string;
+  comprovante?: boolean;
   data: string;
   area?: string;
   responsavel?: string;

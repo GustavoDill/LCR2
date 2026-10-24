@@ -31,7 +31,7 @@ export const Natal: React.FC = () => {
   const carregarDados = async () => {
     try {
       setLoading(true);
-      const res = await api.get<{ evento: NatalEvento; tarefas: NatalTarefa[]; gastos: NatalGasto[] }>('/api/natal');
+      const res = await api.get<{ evento: NatalEvento; tarefas: NatalTarefa[]; gastos: NatalGasto[] }>('/natal');
       if (res.evento) setEvento(res.evento);
       if (res.tarefas) setTarefas(res.tarefas);
       if (res.gastos) setGastos(res.gastos);
@@ -45,7 +45,7 @@ export const Natal: React.FC = () => {
   const handleSalvarEvento = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.put('/api/natal/evento', evento);
+      await api.put('/natal/evento', evento);
       alert('Configurações da Festa de Natal salvas!');
     } catch (err) {
       console.error(err);
@@ -55,7 +55,7 @@ export const Natal: React.FC = () => {
 
   const handleAdicionarTarefa = async (tarefa: { titulo: string; area: string; responsavel: string; prazo: string }) => {
     try {
-      const res = await api.post<NatalTarefa>('/api/natal/tarefas', tarefa);
+      const res = await api.post<NatalTarefa>('/natal/tarefas', tarefa);
       setTarefas(prev => [...prev, res]);
     } catch (err) {
       console.error(err);
@@ -65,7 +65,7 @@ export const Natal: React.FC = () => {
   const handleToggleTarefa = async (t: NatalTarefa) => {
     const novoStatus = t.status === 'concluida' ? 'pendente' : 'concluida';
     try {
-      const res = await api.put<NatalTarefa>(`/api/natal/tarefas/${t.id}`, { status: novoStatus });
+      const res = await api.put<NatalTarefa>(`/natal/tarefas/${t.id}`, { status: novoStatus });
       setTarefas(prev => prev.map(item => (item.id === t.id ? res : item)));
     } catch (err) {
       console.error(err);
@@ -75,7 +75,7 @@ export const Natal: React.FC = () => {
   const handleExcluirTarefa = async (id: string) => {
     if (!confirm('Excluir esta tarefa?')) return;
     try {
-      await api.delete(`/api/natal/tarefas/${id}`);
+      await api.delete(`/natal/tarefas/${id}`);
       setTarefas(prev => prev.filter(t => t.id !== id));
     } catch (err) {
       console.error(err);
@@ -91,12 +91,16 @@ export const Natal: React.FC = () => {
     responsavel: string;
   }) => {
     try {
+      const valEst = parseFloat(gasto.valorEstimado) || 0;
+      const valReal = gasto.valorReal ? parseFloat(gasto.valorReal) : undefined;
       const payload = {
         ...gasto,
-        valorEstimado: parseFloat(gasto.valorEstimado) || 0,
-        valorReal: gasto.valorReal ? parseFloat(gasto.valorReal) : undefined,
+        valorEstimado: valEst,
+        valorReal: valReal,
+        valor: valReal || valEst,
+        data: new Date().toISOString().split('T')[0],
       };
-      const res = await api.post<NatalGasto>('/api/natal/gastos', payload);
+      const res = await api.post<NatalGasto>('/natal/gastos', payload);
       setGastos(prev => [...prev, res]);
     } catch (err) {
       console.error(err);
@@ -106,7 +110,7 @@ export const Natal: React.FC = () => {
   const handleExcluirGasto = async (id: string) => {
     if (!confirm('Excluir este gasto?')) return;
     try {
-      await api.delete(`/api/natal/gastos/${id}`);
+      await api.delete(`/natal/gastos/${id}`);
       setGastos(prev => prev.filter(g => g.id !== id));
     } catch (err) {
       console.error(err);
@@ -116,7 +120,7 @@ export const Natal: React.FC = () => {
   const handleAplicarIdeias = async () => {
     if (!confirm('Deseja carregar as tarefas e checklist sugeridos para a Festa de Natal?')) return;
     try {
-      const res = await api.post<NatalTarefa[]>('/api/natal/tarefas/ideias', {});
+      const res = await api.post<NatalTarefa[]>('/natal/tarefas/ideias', {});
       setTarefas(prev => [...prev, ...res]);
       setTab('tarefas');
     } catch (err) {
