@@ -104,7 +104,7 @@ export const Login: React.FC = () => {
     }
   };
 
-  const handleDevRole = (targetRole: 'bispado' | 'conselho') => {
+  const handleDevRole = (targetRole: any) => {
     loginAsDevRole(targetRole);
     navigate('/');
   };

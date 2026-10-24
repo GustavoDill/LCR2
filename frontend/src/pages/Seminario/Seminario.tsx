@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { SIRRelatorio, SIREstaca, SIRAluno } from '../../types';
+import { SIRRelatorio, SIREstaca, SIRAluno, Membro, MembroProfile360 } from '../../types';
+import { SeminarioPastoralModal } from './SeminarioPastoralModal';
+import { MembroDrawer360 } from '../Membros/MembroDrawer360';
 import { SeminarioFilter } from './seminarioConstants';
 import { calcEstacaStats, formatDatePt } from './seminarioUtils';
 import { SeminarioHeader } from './SeminarioHeader';
@@ -20,6 +22,11 @@ export const Seminario: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<SeminarioFilter>('todos');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [members, setMembers] = useState<Membro[]>([]);
+  const [alunoPastoral, setAlunoPastoral] = useState<SIRAluno | null>(null);
+  const [drawerMember, setDrawerMember] = useState<Membro | null>(null);
+  const [profile360, setProfile360] = useState<MembroProfile360 | null>(null);
+  const [loading360, setLoading360] = useState(false);
 
   useEffect(() => {
     loadSIR();
@@ -109,10 +116,58 @@ export const Seminario: React.FC = () => {
       }>('/sir');
       setAlunosReports(res.alunos || []);
       setEstaca(res.estaca || { seminario: [], instituto: [] });
+
+      try {
+        const memRes = await api.get<{ members: Membro[] }>('/membros');
+        setMembers(memRes.members || []);
+      } catch (e) {
+        console.warn('Could not load members in Seminario:', e);
+      }
     } catch (err) {
       console.error('Erro ao carregar dados do SIR:', err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleOpenMember360(m: Membro) {
+    setDrawerMember(m);
+    setLoading360(true);
+    try {
+      const p360 = await api.get<MembroProfile360>(`/membros/${m.id}/profile360`);
+      setProfile360(p360);
+    } catch (err) {
+      console.error('Erro ao buscar dados 360 do membro:', err);
+      setProfile360(null);
+    } finally {
+      setLoading360(false);
+    }
+  }
+
+  async function handleToggleTaskStatus(taskId: string, currentStatus: string, origem: 'bispado' | 'conselho') {
+    const nextStatus = currentStatus === 'concluida' ? 'pendente' : 'concluida';
+    try {
+      await api.put(`/designacoes/${taskId}`, { status: nextStatus, origem });
+      if (drawerMember) {
+        handleOpenMember360(drawerMember);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Erro ao alterar status da tarefa');
+    }
+  }
+
+  async function handleAddQuickTask(titulo: string) {
+    if (!drawerMember) return;
+    try {
+      await api.post('/designacoes', {
+        titulo: `${titulo} (${drawerMember.nome})`,
+        responsavel: 'Bispo',
+        origem: 'bispado',
+        status: 'pendente',
+      });
+      handleOpenMember360(drawerMember);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao adicionar tarefa rápida');
     }
   }
 
@@ -200,8 +255,27 @@ export const Seminario: React.FC = () => {
           activeFilter={activeFilter}
           setActiveFilter={setActiveFilter}
           counts={filterCounts}
+          onAcompanharAluno={a => setAlunoPastoral(a)}
         />
       </section>
+
+      <SeminarioPastoralModal
+        aluno={alunoPastoral}
+        onClose={() => setAlunoPastoral(null)}
+        members={members}
+        onOpenMember360={handleOpenMember360}
+      />
+
+      <MembroDrawer360
+        drawerMember={drawerMember}
+        onClose={() => setDrawerMember(null)}
+        profile360={profile360}
+        loading360={loading360}
+        canWrite={canWrite}
+        onEditMember={() => {}}
+        onToggleTaskStatus={handleToggleTaskStatus}
+        onAddQuickTask={handleAddQuickTask}
+      />
 
       <SeminarioImportModal
         isOpen={isImportModalOpen}

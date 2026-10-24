@@ -89,7 +89,7 @@ export const LoginSignUpForm: React.FC<LoginSignUpFormProps> = ({
           border: '1px solid var(--line)',
         }}
       >
-        💡 <strong>Regra de Acesso:</strong> O primeiro líder a cadastrar-se será configurado como <strong>Bispo / Administrador</strong>. Os demais líderes terão perfil de <strong>Conselho da Ala</strong>.
+        🔒 <strong>Segurança e Governança:</strong> Por padrão, novos cadastros são criados sem nenhuma permissão de acesso. Após criar sua conta, você poderá informar seu chamado e solicitar liberação de acesso ao Bispado.
       </div>
 
       <button
@@ -98,7 +98,7 @@ export const LoginSignUpForm: React.FC<LoginSignUpFormProps> = ({
         disabled={loading}
         style={{ width: '100%', marginTop: 4, padding: '12px 16px', fontSize: '0.95rem' }}
       >
-        {loading ? 'Criando conta...' : 'Criar Conta e Acessar'}
+        {loading ? 'Criando conta...' : 'Cadastrar e Solicitar Acesso'}
       </button>
     </form>
   );

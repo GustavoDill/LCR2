@@ -1,21 +1,35 @@
 export type UserRole = 'bispado' | 'lider_org' | 'conselho';
 
+export type PermissionLevel = 'none' | 'read' | 'write';
+
 export interface UserPermissions {
-  inicio?: boolean;
-  reuniao?: boolean;
-  designacoes?: boolean;
-  chamados?: boolean;
-  pessoas?: boolean;
-  membros?: boolean;
-  seminario?: boolean;
-  financeiro?: boolean;
-  agenda?: boolean;
-  atividades?: boolean;
-  natal?: boolean;
-  indicadores?: boolean;
-  atas?: boolean;
-  importar?: boolean;
-  [key: string]: boolean | undefined;
+  inicio?: boolean | PermissionLevel;
+  reuniao?: boolean | PermissionLevel;
+  designacoes?: boolean | PermissionLevel;
+  mural?: boolean | PermissionLevel;
+  chamados?: boolean | PermissionLevel;
+  pessoas?: boolean | PermissionLevel;
+  membros?: boolean | PermissionLevel;
+  seminario?: boolean | PermissionLevel;
+  financeiro?: boolean | PermissionLevel;
+  agenda?: boolean | PermissionLevel;
+  atividades?: boolean | PermissionLevel;
+  natal?: boolean | PermissionLevel;
+  indicadores?: boolean | PermissionLevel;
+  atas?: boolean | PermissionLevel;
+  importar?: boolean | PermissionLevel;
+  gerenciamento?: boolean | PermissionLevel;
+  [key: string]: boolean | PermissionLevel | undefined;
+}
+
+export type AccessStatus = 'pendente' | 'aprovado' | 'recusado';
+
+export interface UserAccessRequest {
+  cargo?: string;
+  organizacao?: string;
+  justificativa?: string;
+  solicitadoEm: number;
+  status: AccessStatus;
 }
 
 export interface UserProfile {
@@ -24,12 +38,15 @@ export interface UserProfile {
   displayName?: string;
   name?: string;
   role: UserRole;
-  isBishopric: boolean;
+  isBishopric: boolean; // true for Bispado members
   canWrite: boolean;
   cargo?: string;
-  organizacao?: string;
+  organizacao?: string; // ex: 'Sociedade de Socorro', 'Quórum de Élderes', 'Moças', 'Primária', etc.
   permissoes?: UserPermissions;
   ativo?: boolean;
+  statusAcesso?: AccessStatus;
+  solicitacaoAcesso?: UserAccessRequest;
+  receberNotificacoesCadastro?: boolean;
   criadoEm?: number;
   ultimoAcesso?: number;
 }

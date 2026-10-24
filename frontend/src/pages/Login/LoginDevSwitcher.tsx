@@ -1,7 +1,8 @@
 import React from 'react';
+import { DevRoleOption } from '../../context/AuthContext';
 
 interface LoginDevSwitcherProps {
-  onDevRole: (role: 'bispado' | 'conselho') => void;
+  onDevRole: (role: DevRoleOption) => void;
 }
 
 export const LoginDevSwitcher: React.FC<LoginDevSwitcherProps> = ({ onDevRole }) => {
@@ -22,30 +23,50 @@ export const LoginDevSwitcher: React.FC<LoginDevSwitcherProps> = ({ onDevRole })
             letterSpacing: '0.06em',
           }}
         >
-          Atalho Local de Testes
+          Simulação de Papéis (Desenvolvimento)
         </span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         <button
           type="button"
-          className="btn btn-secondary"
+          className="btn btn-secondary sm"
           onClick={() => onDevRole('bispado')}
-          style={{ fontSize: '0.8rem', padding: '7px 10px' }}
+          style={{ fontSize: '0.76rem', padding: '6px 8px' }}
+          title="Acesso total de escrita a todos os módulos"
         >
-          Simular Bispado
+          🏛️ Simular Bispado
         </button>
         <button
           type="button"
-          className="btn btn-secondary"
-          onClick={() => onDevRole('conselho')}
-          style={{ fontSize: '0.8rem', padding: '7px 10px' }}
+          className="btn btn-secondary sm"
+          onClick={() => onDevRole('lider_org')}
+          style={{ fontSize: '0.76rem', padding: '6px 8px' }}
+          title="Acesso de líder de organização"
         >
-          Simular Conselho
+          🤝 Simular Líder Org
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary sm"
+          onClick={() => onDevRole('conselho')}
+          style={{ fontSize: '0.76rem', padding: '6px 8px' }}
+          title="Acesso padrão de conselho da ala"
+        >
+          👥 Simular Conselho
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary sm"
+          onClick={() => onDevRole('sem_acesso')}
+          style={{ fontSize: '0.76rem', padding: '6px 8px', color: 'var(--color-danger, #dc2626)' }}
+          title="Usuário ativo com zero permissões concedidas"
+        >
+          🔒 Simular Sem Acesso
         </button>
       </div>
 
-      <div style={{ textAlign: 'center', marginTop: 22, fontSize: '0.74rem', color: 'var(--muted)' }}>
+      <div style={{ textAlign: 'center', marginTop: 18, fontSize: '0.74rem', color: 'var(--muted)' }}>
         Dados protegidos em conformidade com as diretrizes do Manual Geral.
       </div>
     </>

@@ -5,5 +5,6 @@ export { LoginForm } from './LoginForm';
 export { LoginSignUpForm } from './LoginSignUpForm';
 export { LoginResetForm } from './LoginResetForm';
 export { LoginDevSwitcher } from './LoginDevSwitcher';
+export { AwaitingApprovalView } from './AwaitingApprovalView';
 export * from './loginUtils';
 export * from './loginIcons';

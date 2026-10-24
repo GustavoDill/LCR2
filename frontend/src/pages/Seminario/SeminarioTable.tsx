@@ -7,6 +7,7 @@ interface SeminarioTableProps {
   activeFilter: SeminarioFilter;
   setActiveFilter: (filter: SeminarioFilter) => void;
   counts: Record<SeminarioFilter, number>;
+  onAcompanharAluno: (aluno: SIRAluno) => void;
 }
 
 export const SeminarioTable: React.FC<SeminarioTableProps> = ({
@@ -14,6 +15,7 @@ export const SeminarioTable: React.FC<SeminarioTableProps> = ({
   activeFilter,
   setActiveFilter,
   counts,
+  onAcompanharAluno,
 }) => {
   return (
     <>
@@ -90,9 +92,7 @@ export const SeminarioTable: React.FC<SeminarioTableProps> = ({
                       <button
                         type="button"
                         className="btn ghost sm"
-                        onClick={() => {
-                          alert(`Acompanhamento pastoral de ${aluno.nome}`);
-                        }}
+                        onClick={() => onAcompanharAluno(aluno)}
                       >
                         Acompanhar
                       </button>

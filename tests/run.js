@@ -8,6 +8,8 @@ import { registerAtividadesTests } from './suites/06_atividades.test.js';
 import { registerFinanceiroTests } from './suites/07_financeiro.test.js';
 import { registerAgendaTests } from './suites/08_agenda.test.js';
 import { registerDesignacoesReuniaoTests } from './suites/09_designacoes_reuniao.test.js';
+import { registerGerenciamentoPastoralTests } from './suites/10_gerenciamento_pastoral.test.js';
+import { registerOnboardingPermissoesTests } from './suites/11_onboarding_permissoes.test.js';
 
 // =========================================================================
 // REGISTRO DE SUÍTES: Adicione novas suítes de features existentes ou futuras aqui
@@ -21,6 +23,8 @@ registerAtividadesTests(runner);
 registerFinanceiroTests(runner);
 registerAgendaTests(runner);
 registerDesignacoesReuniaoTests(runner);
+registerGerenciamentoPastoralTests(runner);
+registerOnboardingPermissoesTests(runner);
 
 // Exemplo para futuras features:
 // import { registerNovaFeatureTests } from './suites/09_nova_feature.test.js';

@@ -1,7 +1,12 @@
 import { Router } from 'express';
-import { authenticate, requireBishopric } from '../middlewares/auth.js';
+import { authenticate, requirePermission } from '../middlewares/auth.js';
 import { getAuth, getDb } from '../config/firebase.js';
 import { UserProfile } from '../types/index.js';
+import {
+  getAdminRecipientsForNewRegistrations,
+  sendAccessRequestEmail,
+  sendAccessApprovedEmail,
+} from '../services/email.js';
 
 const router = Router();
 
@@ -12,8 +17,72 @@ router.get('/me', authenticate, (req, res) => {
   });
 });
 
-// List all registered users (Bishopric only)
-router.get('/users', authenticate, requireBishopric, async (req, res) => {
+// Request access / Submit calling & justification for pending users
+router.post('/request-access', authenticate, async (req, res) => {
+  if (!req.user) {
+    res.status(401).json({ error: 'Usuário não autenticado.' });
+    return;
+  }
+
+  const { cargo, organizacao, justificativa } = req.body;
+
+  try {
+    const db = getDb();
+    const userDocRef = db.collection('usuarios').doc(req.user.uid);
+
+    const cargoSolicitado = cargo?.trim() || req.user.cargo || 'Não informado';
+    const organizacaoSolicitada = organizacao?.trim() || req.user.organizacao || '';
+    const justificativaSolicitada = justificativa?.trim() || '';
+
+    const solicitacaoAcesso = {
+      cargo: cargoSolicitado,
+      organizacao: organizacaoSolicitada,
+      justificativa: justificativaSolicitada,
+      solicitadoEm: Date.now(),
+      status: 'pendente' as const,
+    };
+
+    const updates: any = {
+      solicitacaoAcesso,
+      statusAcesso: 'pendente',
+      cargo: cargoSolicitado,
+      ...(organizacaoSolicitada ? { organizacao: organizacaoSolicitada } : {}),
+      ultimoAcesso: Date.now(),
+    };
+
+    await userDocRef.update(updates);
+
+    // Look up administrators configured to receive new registration notifications
+    const adminEmails = await getAdminRecipientsForNewRegistrations(db);
+
+    const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    const gerenciamentoUrl = `${appUrl}/gerenciamento`;
+
+    // Asynchronously dispatch notification email to administrators
+    sendAccessRequestEmail({
+      adminEmails,
+      solicitanteNome: req.user.displayName || req.user.email || 'Novo Usuário',
+      solicitanteEmail: req.user.email || '',
+      cargoSolicitado,
+      organizacaoSolicitada,
+      justificativa: justificativaSolicitada,
+      dataSolicitacao: new Date().toLocaleString('pt-BR'),
+      gerenciamentoUrl,
+    }).catch(e => console.warn('Falha no envio assíncrono de notificação de cadastro:', e));
+
+    res.json({
+      success: true,
+      message: 'Solicitação de acesso enviada com sucesso aos administradores da Ala Bosque.',
+      solicitacaoAcesso,
+    });
+  } catch (err: any) {
+    console.error('Error submitting access request:', err);
+    res.status(500).json({ error: 'Erro ao registrar solicitação de acesso.' });
+  }
+});
+
+// List all registered users (Gerenciamento read or write permission required)
+router.get('/users', authenticate, requirePermission('gerenciamento', false), async (req, res) => {
   try {
     const db = getDb();
     const snapshot = await db.collection('usuarios').get();
@@ -33,10 +102,20 @@ router.get('/users', authenticate, requireBishopric, async (req, res) => {
   }
 });
 
-// Update a user's role and permissions (Bishopric only)
-router.put('/users/:uid', authenticate, requireBishopric, async (req, res) => {
+// Update a user's role and permissions (Gerenciamento write permission required)
+router.put('/users/:uid', authenticate, requirePermission('gerenciamento', true), async (req, res) => {
   const { uid } = req.params;
-  const { role, cargo, organizacao, permissoes, canWrite, ativo, displayName } = req.body;
+  const {
+    role,
+    cargo,
+    organizacao,
+    permissoes,
+    canWrite,
+    ativo,
+    displayName,
+    statusAcesso,
+    receberNotificacoesCadastro,
+  } = req.body;
 
   try {
     const db = getDb();
@@ -50,29 +129,69 @@ router.put('/users/:uid', authenticate, requireBishopric, async (req, res) => {
     }
 
     const currentData = doc.data() as any;
-    const targetRole = (role || currentData.role || 'conselho');
+    const targetRole = role || currentData.role || 'conselho';
     const isBishop = targetRole === 'bispado';
+    const finalPermissoes = permissoes !== undefined ? permissoes : (currentData.permissoes || {});
+    const hasMgmtWrite = isBishop || finalPermissoes?.gerenciamento === 'write' || finalPermissoes?.gerenciamento === true;
+
+    // Validate receberNotificacoesCadastro requirement
+    if (receberNotificacoesCadastro === true && !hasMgmtWrite) {
+      res.status(400).json({
+        error: 'Apenas usuários com permissão de edição em Gerenciamento podem receber notificações de novos cadastros.',
+      });
+      return;
+    }
+
+    let finalReceberNotificacoes: boolean | undefined = undefined;
+    if (receberNotificacoesCadastro !== undefined) {
+      finalReceberNotificacoes = Boolean(receberNotificacoesCadastro) && hasMgmtWrite;
+    } else if (!hasMgmtWrite && currentData.receberNotificacoesCadastro === true) {
+      // If user lost management permission, revoke notification flag
+      finalReceberNotificacoes = false;
+    }
+
+    // Determine status transition
+    let nextStatusAcesso = statusAcesso !== undefined ? statusAcesso : currentData.statusAcesso;
+    const wasPending = currentData.statusAcesso === 'pendente';
+    // If user was pending and permissions were set or explicit approval passed
+    if (wasPending && (statusAcesso === 'aprovado' || (permissoes && Object.values(permissoes).some(v => v === 'read' || v === 'write' || v === true)))) {
+      nextStatusAcesso = 'aprovado';
+    }
 
     const updates: Partial<UserProfile> = {
       ...(role !== undefined && { role: targetRole, isBishopric: isBishop }),
       ...(cargo !== undefined && { cargo }),
       ...(organizacao !== undefined && { organizacao }),
-      ...(permissoes !== undefined && { permissoes }),
+      ...(permissoes !== undefined && { permissoes: finalPermissoes }),
       ...(canWrite !== undefined && { canWrite: Boolean(canWrite) }),
       ...(ativo !== undefined && { ativo: Boolean(ativo) }),
       ...(displayName !== undefined && { displayName }),
+      ...(nextStatusAcesso !== undefined && { statusAcesso: nextStatusAcesso }),
+      ...(finalReceberNotificacoes !== undefined && { receberNotificacoesCadastro: finalReceberNotificacoes }),
       ultimoAcesso: Date.now(),
     };
 
     await userDocRef.update(updates);
 
+    // If account was just approved, notify user by email
+    if (wasPending && nextStatusAcesso === 'aprovado' && currentData.email) {
+      const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      sendAccessApprovedEmail({
+        to: currentData.email,
+        userName: updates.displayName || currentData.displayName || currentData.name || 'Líder',
+        cargo: updates.cargo || currentData.cargo,
+        organizacao: updates.organizacao || currentData.organizacao,
+        appUrl,
+      }).catch(e => console.warn('Falha no envio assíncrono de e-mail de aprovação:', e));
+    }
+
     // Update Firebase Auth custom claims if auth is active
     if (auth) {
       try {
         await auth.setCustomUserClaims(uid, {
-          role: updates.role || (doc.data() as any).role,
+          role: updates.role || currentData.role,
           isBishopric: isBishop,
-          canWrite: updates.canWrite !== undefined ? updates.canWrite : (doc.data() as any).canWrite,
+          canWrite: updates.canWrite !== undefined ? updates.canWrite : currentData.canWrite,
         });
       } catch (err) {
         console.warn('Could not update custom user claims:', err);
@@ -87,8 +206,8 @@ router.put('/users/:uid', authenticate, requireBishopric, async (req, res) => {
   }
 });
 
-// Delete or remove user (Bishopric only)
-router.delete('/users/:uid', authenticate, requireBishopric, async (req, res) => {
+// Delete or remove user (Gerenciamento write permission required)
+router.delete('/users/:uid', authenticate, requirePermission('gerenciamento', true), async (req, res) => {
   const { uid } = req.params;
 
   // Prevent self-deletion
