@@ -1,11 +1,12 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { Layout } from './components/Layout';
+import { Layout, TABS } from './components/Layout';
 
 // Pages
 import { Inicio } from './pages/Inicio';
 import { Designacoes } from './pages/Designacoes';
+import { Mural } from './pages/Mural';
 import { Reuniao } from './pages/Reuniao';
 import { Atas } from './pages/Atas';
 import { ChamadosDesobrigacoes } from './pages/ChamadosDesobrigacoes';
@@ -19,11 +20,12 @@ import { Atividades } from './pages/Atividades';
 import { Natal } from './pages/Natal';
 import { Indicadores } from './pages/Indicadores';
 import { Importar } from './pages/Importar';
-import { Login } from './pages/Login';
+import { Gerenciamento } from './pages/Gerenciamento';
+import { Login, AwaitingApprovalView } from './pages/Login';
 
 // Protected Route Guard for logged in users
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isLoggedIn, loading } = useAuth();
+  const { user, isLoggedIn, loading } = useAuth();
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: 'var(--color-bg)' }}>
@@ -32,12 +34,15 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     );
   }
   if (!isLoggedIn) return <Navigate to="/login" replace />;
+  if (user?.statusAcesso === 'pendente' || user?.statusAcesso === 'recusado') {
+    return <AwaitingApprovalView />;
+  }
   return <>{children}</>;
 };
 
 // Protected Route Guard for module permissions
 const PermissionRoute: React.FC<{ modulo: string; children: React.ReactNode }> = ({ modulo, children }) => {
-  const { hasPermission, isBishopric, isLoggedIn, loading } = useAuth();
+  const { user, hasPermission, isLoggedIn, loading } = useAuth();
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: 'var(--color-bg)' }}>
@@ -46,13 +51,16 @@ const PermissionRoute: React.FC<{ modulo: string; children: React.ReactNode }> =
     );
   }
   if (!isLoggedIn) return <Navigate to="/login" replace />;
-  if (!isBishopric && !hasPermission(modulo)) return <Navigate to="/" replace />;
+  if (user?.statusAcesso === 'pendente' || user?.statusAcesso === 'recusado') {
+    return <AwaitingApprovalView />;
+  }
+  if (!hasPermission(modulo)) return <Navigate to="/" replace />;
   return <>{children}</>;
 };
 
 // Protected Route Guard for Bishopric-only administration
 const BishopricRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isBishopric, isLoggedIn, loading } = useAuth();
+  const { user, isBishopric, isLoggedIn, loading } = useAuth();
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: 'var(--color-bg)' }}>
@@ -61,8 +69,34 @@ const BishopricRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     );
   }
   if (!isLoggedIn) return <Navigate to="/login" replace />;
+  if (user?.statusAcesso === 'pendente' || user?.statusAcesso === 'recusado') {
+    return <AwaitingApprovalView />;
+  }
   if (!isBishopric) return <Navigate to="/" replace />;
   return <>{children}</>;
+};
+
+// Route component ensuring that if user lacks permission for 'inicio', they are redirected to their first accessible tab
+const InicioRoute: React.FC = () => {
+  const { hasPermission, isBishopric } = useAuth();
+
+  if (!isBishopric && !hasPermission('inicio')) {
+    const allowed = TABS.find(t => t.id !== 'inicio' && hasPermission(t.id));
+    if (allowed) {
+      return <Navigate to={allowed.path} replace />;
+    }
+    return (
+      <div style={{ maxWidth: 540, margin: '60px auto', padding: '36px 28px', background: 'var(--color-surface, #fff)', borderRadius: 16, border: '1px solid var(--color-border, #e2e8f0)', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.06)' }}>
+        <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>🔒</div>
+        <h2 style={{ margin: '0 0 8px 0', fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-text)' }}>Nenhum Módulo Liberado</h2>
+        <p style={{ color: 'var(--color-text-muted)', margin: '0 0 10px 0', fontSize: '0.88rem', lineHeight: 1.55 }}>
+          Sua conta está ativa, porém ainda não possui permissão de acesso a nenhum módulo do sistema. Contate o Bispado ou um administrador para configurar suas permissões na <strong>Central de Gerenciamento</strong>.
+        </p>
+      </div>
+    );
+  }
+
+  return <Inicio />;
 };
 
 export const AppRoutes: React.FC = () => {
@@ -76,7 +110,7 @@ export const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <Layout>
-              <Inicio />
+              <InicioRoute />
             </Layout>
           </ProtectedRoute>
         }
@@ -87,6 +121,16 @@ export const AppRoutes: React.FC = () => {
           <PermissionRoute modulo="designacoes">
             <Layout>
               <Designacoes />
+            </Layout>
+          </PermissionRoute>
+        }
+      />
+      <Route
+        path="/mural"
+        element={
+          <PermissionRoute modulo="mural">
+            <Layout>
+              <Mural />
             </Layout>
           </PermissionRoute>
         }
@@ -212,17 +256,18 @@ export const AppRoutes: React.FC = () => {
         }
       />
 
-      {/* Bishopric Confidential Administration */}
+      {/* Bishopric Confidential Administration / Central de Gerenciamento */}
       <Route
-        path="/importar"
+        path="/gerenciamento"
         element={
-          <BishopricRoute>
+          <PermissionRoute modulo="gerenciamento">
             <Layout>
-              <Importar />
+              <Gerenciamento />
             </Layout>
-          </BishopricRoute>
+          </PermissionRoute>
         }
       />
+      <Route path="/importar" element={<Navigate to="/gerenciamento" replace />} />
 
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />

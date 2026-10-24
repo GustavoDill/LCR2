@@ -1,21 +1,35 @@
 export type UserRole = 'bispado' | 'lider_org' | 'conselho';
 
+export type PermissionLevel = 'none' | 'read' | 'write';
+
 export interface UserPermissions {
-  inicio?: boolean;
-  reuniao?: boolean;
-  designacoes?: boolean;
-  chamados?: boolean;
-  pessoas?: boolean;
-  membros?: boolean;
-  seminario?: boolean;
-  financeiro?: boolean;
-  agenda?: boolean;
-  atividades?: boolean;
-  natal?: boolean;
-  indicadores?: boolean;
-  atas?: boolean;
-  importar?: boolean;
-  [key: string]: boolean | undefined;
+  inicio?: boolean | PermissionLevel;
+  reuniao?: boolean | PermissionLevel;
+  designacoes?: boolean | PermissionLevel;
+  mural?: boolean | PermissionLevel;
+  chamados?: boolean | PermissionLevel;
+  pessoas?: boolean | PermissionLevel;
+  membros?: boolean | PermissionLevel;
+  seminario?: boolean | PermissionLevel;
+  financeiro?: boolean | PermissionLevel;
+  agenda?: boolean | PermissionLevel;
+  atividades?: boolean | PermissionLevel;
+  natal?: boolean | PermissionLevel;
+  indicadores?: boolean | PermissionLevel;
+  atas?: boolean | PermissionLevel;
+  importar?: boolean | PermissionLevel;
+  gerenciamento?: boolean | PermissionLevel;
+  [key: string]: boolean | PermissionLevel | undefined;
+}
+
+export type AccessStatus = 'pendente' | 'aprovado' | 'recusado';
+
+export interface UserAccessRequest {
+  cargo?: string;
+  organizacao?: string;
+  justificativa?: string;
+  solicitadoEm: number;
+  status: AccessStatus;
 }
 
 export interface UserProfile {
@@ -30,6 +44,9 @@ export interface UserProfile {
   organizacao?: string; // ex: 'Sociedade de Socorro', 'Quórum de Élderes', 'Moças', 'Primária', etc.
   permissoes?: UserPermissions;
   ativo?: boolean;
+  statusAcesso?: AccessStatus;
+  solicitacaoAcesso?: UserAccessRequest;
+  receberNotificacoesCadastro?: boolean;
   criadoEm?: number;
   ultimoAcesso?: number;
 }
@@ -60,6 +77,9 @@ export interface Ata {
   status: MeetingStatus;
   inicioEm?: number;
   fimEm?: number;
+  oracaoAbertura?: string;
+  pensamentoEspiritual?: string;
+  oracaoEncerramento?: string;
   notas: Record<string, string>; // sectionKey => text, '_pres' for attendees
   tratados: Record<string, boolean>; // sectionKey => boolean
 }
@@ -327,11 +347,14 @@ export interface NatalEvento {
   id: string;
   nome?: string;
   data?: string;
+  horario?: string;
   inicio?: string;
   local?: string;
   tema?: string;
+  foco?: string;
   publico?: string;
   orcamento?: number;
+  orcamentoTotal?: number;
   atualizadoEm?: number;
 }
 
@@ -352,6 +375,10 @@ export interface NatalGasto {
   id: string;
   descricao: string;
   valor: number;
+  valorEstimado?: number;
+  valorReal?: number;
+  categoria?: string;
+  comprovante?: boolean;
   data: string;
   area?: string;
   responsavel?: string;
@@ -376,4 +403,55 @@ export interface IndicadorMensal {
   servico?: number | null;
   autossuf?: number | null;
   [key: string]: any;
+}
+
+
+export interface MuralAlmocoItem {
+  dia: string;
+  diaSemana: string;
+  responsavel: string;
+  destaque?: boolean;
+}
+
+export interface MuralDiscursanteDom {
+  data: string;
+  nomes: string;
+}
+
+export interface MuralLimpezaItem {
+  responsavel: string;
+  local: string;
+}
+
+export interface MuralEstudoSemana {
+  periodo: string;
+  escrituras: string;
+  tema: string;
+  imagemDataUrl?: string;
+}
+
+export interface MuralAnuncioItem {
+  titulo: string;
+  texto: string;
+  link?: string;
+}
+
+export interface MuralData {
+  dataTopo: string;
+  alaTitulo: string;
+  logoUrl?: string;
+  institutoTexto: string;
+  seminarioTexto: string;
+  mesAlmoco: string;
+  mostrarMesAlmoco?: boolean;
+  almocoSisteres: MuralAlmocoItem[];
+  discursantes: MuralDiscursanteDom[];
+  modoLimpeza?: 'setores' | 'ala_unica';
+  limpezaAlaUnica?: string;
+  limpezaCapela: MuralLimpezaItem[];
+  paoSacramento: string;
+  estudoSemana: MuralEstudoSemana;
+  anuncios: MuralAnuncioItem[];
+  mostrarAnuncios?: boolean;
+  atualizadoEm?: number;
 }

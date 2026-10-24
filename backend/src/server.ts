@@ -11,7 +11,7 @@ async function bootstrap() {
     initFirebase();
     const app = createApp();
 
-    app.listen(PORT, () => {
+    app.listen(PORT as number, "0.0.0.0", () => {
       console.log(`🚀 Bispado Ala Bosque Server running on port ${PORT}`);
       console.log(`📡 API Health: http://localhost:${PORT}/api/health`);
     });

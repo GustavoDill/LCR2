@@ -35,7 +35,7 @@ router.get('/', authenticate, async (req, res) => {
   }
 });
 
-router.post('/evento', authenticate, requireWrite, async (req, res) => {
+const saveEventoHandler = async (req: any, res: any) => {
   try {
     const db = getDb();
     const updateData = {
@@ -50,7 +50,10 @@ router.post('/evento', authenticate, requireWrite, async (req, res) => {
     console.error('Error saving natal evento:', error);
     res.status(500).json({ error: 'Erro ao salvar dados da festa.' });
   }
-});
+};
+
+router.post('/evento', authenticate, requireWrite, saveEventoHandler);
+router.put('/evento', authenticate, requireWrite, saveEventoHandler);
 
 // Tarefas
 router.post('/tarefas', authenticate, requireWrite, async (req, res) => {
@@ -178,27 +181,92 @@ router.post('/tarefas/batch', authenticate, requireWrite, async (req, res) => {
   }
 });
 
+
+const TEMPLATE_IDEIAS = [
+  { titulo: 'Apresentação musical do coral da Primária', area: 'Programação', obs: 'Crianças cantando hinos de Natal e encenação de Lucas 2' },
+  { titulo: 'Mensagem de Natal do Bispado e vídeo da Primeira Presidência', area: 'Programação', obs: 'Foco no Salvador Jesus Cristo e boas-vindas aos amigos' },
+  { titulo: 'Organização do jantar compartilhado (saladas e sobremesas)', area: 'Alimentação', obs: 'Famílias trazem acompanhamentos' },
+  { titulo: 'Compra e preparo da carne principal (orçamento da ala)', area: 'Alimentação', obs: 'Chester / Pernil / Churrasco' },
+  { titulo: 'Decoração e montagem do Presépio no Salão Cultural', area: 'Decoração', obs: 'Árvore da bondade, presépio e iluminação festiva' },
+  { titulo: 'Árvore da bondade (metas de serviço para as famílias)', area: 'Ação Social', obs: 'Cartões com pequenos atos de serviço para levar para casa' },
+  { titulo: 'Divulgação e convite a amigos da Igreja e menos ativos', area: 'Divulgação', obs: 'Cartão de convite impresso e digital' },
+  { titulo: 'Equipe de apoio e limpeza do salão cultural pós-festa', area: 'Limpeza', obs: 'Organização das mesas e lixo' }
+];
+
+router.post('/tarefas/ideias', authenticate, requireWrite, async (req, res) => {
+  try {
+    const db = getDb();
+    const now = Date.now();
+    const created: any[] = [];
+
+    for (const item of TEMPLATE_IDEIAS) {
+      const doc: any = {
+        titulo: item.titulo,
+        area: item.area,
+        obs: item.obs,
+        responsavel: '',
+        prazo: '',
+        status: 'pendente',
+        criadoEm: now,
+        atualizadoEm: now,
+      };
+      const ref = await db.collection('natal-tarefas').add(doc);
+      created.push({ id: ref.id, ...doc });
+    }
+
+    res.status(201).json(created);
+  } catch (error) {
+    console.error('Error applying natal ideias:', error);
+    res.status(500).json({ error: 'Erro ao aplicar tarefas sugeridas de Natal.' });
+  }
+});
+
 // Gastos
 router.post('/gastos', authenticate, requireWrite, async (req, res) => {
   try {
     const db = getDb();
-    const { descricao, valor, data, area, responsavel, nota, syncToFinanceiro } = req.body;
+    const {
+      descricao,
+      valor,
+      valorEstimado,
+      valorReal,
+      categoria,
+      data,
+      area,
+      responsavel,
+      nota,
+      comprovante,
+      syncToFinanceiro
+    } = req.body;
 
     if (!descricao || !descricao.trim()) {
       return res.status(400).json({ error: 'Descrição é obrigatória.' });
     }
-    const val = Number(valor);
-    if (!val || val <= 0) {
-      return res.status(400).json({ error: 'Valor deve ser maior que zero.' });
+
+    const numEstimado = Number(valorEstimado);
+    const numReal = Number(valorReal);
+    const numValor = Number(valor);
+
+    const val = isFinite(numValor) && numValor > 0
+      ? numValor
+      : isFinite(numReal) && numReal > 0
+        ? numReal
+        : isFinite(numEstimado) && numEstimado > 0
+          ? numEstimado
+          : 0;
+
+    if (val <= 0) {
+      return res.status(400).json({ error: 'Informe um valor estimado ou valor real maior que zero.' });
     }
 
     const now = Date.now();
+    const purchaseDate = data || new Date().toISOString().split('T')[0];
+    const categoryArea = area || categoria || 'Geral';
     let finId: string | undefined = undefined;
 
     // Optional sync to main ward finance ledger if requested
     if (syncToFinanceiro && req.user?.isBishopric) {
       try {
-        const purchaseDate = data || new Date().toISOString().split('T')[0];
         const [y, m] = purchaseDate.split('-').map(Number);
         const periodo = `${y}-T${Math.floor((m - 1) / 3) + 1}`;
 
@@ -227,11 +295,15 @@ router.post('/gastos', authenticate, requireWrite, async (req, res) => {
       }
     }
 
-    const newGasto: Omit<NatalGasto, 'id'> = {
+    const newGasto: any = {
       descricao: descricao.trim(),
       valor: Math.round(val * 100) / 100,
-      data: data || new Date().toISOString().split('T')[0],
-      area: area || 'Churrasco',
+      valorEstimado: isFinite(numEstimado) ? numEstimado : undefined,
+      valorReal: isFinite(numReal) ? numReal : undefined,
+      categoria: categoria || categoryArea,
+      area: categoryArea,
+      comprovante: Boolean(comprovante),
+      data: purchaseDate,
       responsavel: responsavel || '',
       nota: nota || '',
       finId,

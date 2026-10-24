@@ -15,12 +15,34 @@ import {
 import { setTokenProvider, setRoleOverride, api } from '../api/client';
 import { UserProfile, UserRole, UserPermissions } from '../types';
 
+export function getZeroPermissions(): UserPermissions {
+  return {
+    inicio: 'none',
+    reuniao: 'none',
+    designacoes: 'none',
+    mural: 'none',
+    chamados: 'none',
+    pessoas: 'none',
+    membros: 'none',
+    seminario: 'none',
+    financeiro: 'none',
+    agenda: 'none',
+    atividades: 'none',
+    natal: 'none',
+    indicadores: 'none',
+    atas: 'none',
+    importar: 'none',
+    gerenciamento: 'none',
+  };
+}
+
 export function getDefaultPermissions(role: UserRole): UserPermissions {
   if (role === 'bispado') {
     return {
       inicio: true,
       reuniao: true,
       designacoes: true,
+      mural: true,
       chamados: true,
       pessoas: true,
       membros: true,
@@ -32,6 +54,7 @@ export function getDefaultPermissions(role: UserRole): UserPermissions {
       indicadores: true,
       atas: true,
       importar: true,
+      gerenciamento: true,
     };
   }
 
@@ -40,6 +63,7 @@ export function getDefaultPermissions(role: UserRole): UserPermissions {
       inicio: true,
       reuniao: true,
       designacoes: true,
+      mural: true,
       chamados: true,
       pessoas: false,
       membros: true,
@@ -51,6 +75,7 @@ export function getDefaultPermissions(role: UserRole): UserPermissions {
       indicadores: true,
       atas: true,
       importar: false,
+      gerenciamento: false,
     };
   }
 
@@ -59,6 +84,7 @@ export function getDefaultPermissions(role: UserRole): UserPermissions {
     inicio: true,
     reuniao: true,
     designacoes: true,
+    mural: true,
     chamados: false,
     pessoas: false,
     membros: false,
@@ -70,8 +96,11 @@ export function getDefaultPermissions(role: UserRole): UserPermissions {
     indicadores: true,
     atas: true,
     importar: false,
+    gerenciamento: false,
   };
 }
+
+export type DevRoleOption = UserRole | 'sem_acesso' | 'pendente';
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -89,7 +118,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
-  loginAsDevRole: (targetRole: UserRole) => void;
+  loginAsDevRole: (targetRole: DevRoleOption) => void;
   toggleDevRole: () => void;
 }
 
@@ -113,7 +142,7 @@ const AuthContext = createContext<AuthContextType>({
   toggleDevRole: () => {},
 });
 
-// Firebase Client configuration with environment variables and project defaults
+// Firebase Client configuration
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCz0JizuP4pDB8GWwKWgOu4dOY1LY_C6ik',
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'lcr2-db541.firebaseapp.com',
@@ -151,20 +180,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return null;
     });
 
-    if (!firebaseUser) {
+    if (!firebaseUser && !user) {
       setRoleOverride(devRole === 'bispado' ? 'bishopric' : 'council');
     } else {
       setRoleOverride(null);
     }
-  }, [firebaseUser, devRole]);
+  }, [firebaseUser, devRole, user]);
 
   const fetchUserProfile = async (fUser: User): Promise<UserProfile> => {
     try {
-      const res = await api.get<{ user: UserProfile }>('/api/auth/me');
+      const token = await fUser.getIdToken(true);
+      const res = await api.get<{ user: UserProfile }>('/api/auth/me', {
+        Authorization: `Bearer ${token}`,
+      });
       if (res && res.user) {
         return {
           ...res.user,
-          permissoes: res.user.permissoes || getDefaultPermissions(res.user.role),
+          permissoes: res.user.permissoes || (res.user.statusAcesso === 'pendente' ? getZeroPermissions() : getDefaultPermissions(res.user.role)),
         };
       }
     } catch (err) {
@@ -186,30 +218,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       name: fUser.displayName || undefined,
       role: resolvedRole,
       isBishopric: resolvedRole === 'bispado',
-      canWrite: true,
-      cargo: resolvedRole === 'bispado' ? 'Membro do Bispado' : resolvedRole === 'lider_org' ? 'Líder de Organização' : 'Líder do Conselho',
-      permissoes: getDefaultPermissions(resolvedRole),
+      canWrite: isBisp,
+      cargo: isBisp ? 'Membro do Bispado' : resolvedRole === 'lider_org' ? 'Líder de Organização' : 'Aguardando Aprovação',
+      permissoes: isBisp ? getDefaultPermissions('bispado') : getZeroPermissions(),
+      statusAcesso: isBisp ? 'aprovado' : 'pendente',
       ativo: true,
     };
   };
 
   const hasPermission = (moduloId: string): boolean => {
-    const activeRole = user?.role || devRole;
-    if (user?.isBishopric || activeRole === 'bispado') return true;
-
-    // Check custom overrides first
-    if (user?.permissoes && user.permissoes[moduloId] !== undefined) {
-      return Boolean(user.permissoes[moduloId]);
+    // 1. If user is pending or refused, they have ZERO access
+    if (user?.statusAcesso === 'pendente' || user?.statusAcesso === 'recusado') {
+      return false;
     }
 
-    // Alias check for navigation IDs
-    if (moduloId === 'chamdes') {
-      if (user?.permissoes?.chamados !== undefined) return Boolean(user.permissoes.chamados);
+    // 2. If user is logged in
+    if (user) {
+      if (user.isBishopric || user.role === 'bispado') {
+        return true;
+      }
+
+      // Check granular permissions configured on user profile
+      if (user.permissoes) {
+        let val = user.permissoes[moduloId];
+        if (moduloId === 'chamdes' && val === undefined) {
+          val = user.permissoes.chamados;
+        }
+
+        if (val === 'write' || val === 'read' || val === true) {
+          return true;
+        }
+        if (val === 'none' || val === false) {
+          return false;
+        }
+      }
+
+      // Fallback to role defaults
+      const defaults = getDefaultPermissions(user.role || 'conselho');
+      const defVal = moduloId === 'chamdes' ? defaults.chamados : defaults[moduloId];
+      return defVal === true || defVal === 'read' || defVal === 'write';
     }
 
-    const defaults = getDefaultPermissions(activeRole);
-    if (moduloId === 'chamdes') return Boolean(defaults.chamados);
-    return Boolean(defaults[moduloId]);
+    // 3. Fallback when in anonymous dev simulation without logged in user
+    if (devRole === 'bispado') return true;
+    const defaults = getDefaultPermissions(devRole);
+    const defVal = moduloId === 'chamdes' ? defaults.chamados : defaults[moduloId];
+    return defVal === true || defVal === 'read' || defVal === 'write';
   };
 
   const refreshProfile = async () => {
@@ -225,6 +279,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsubscribe = onAuthStateChanged(auth, async (fUser) => {
       setFirebaseUser(fUser);
       if (fUser) {
+        localStorage.removeItem('lcr2_dev_user');
+        setRoleOverride(null);
         try {
           const profile = await fetchUserProfile(fUser);
           setUser(profile);
@@ -236,8 +292,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const savedDev = localStorage.getItem('lcr2_dev_user');
         if (savedDev) {
           try {
-            const parsed = JSON.parse(savedDev);
-            setUser(parsed);
+            setUser(JSON.parse(savedDev));
           } catch {
             setUser(null);
           }
@@ -258,9 +313,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       unsubscribe();
       window.removeEventListener('auth:unauthorized', handleUnauthorized);
     };
-  }, [devRole]);
+  }, []);
 
   const signIn = async (email: string, pass: string) => {
+    localStorage.removeItem('lcr2_dev_user');
+    setRoleOverride(null);
     ensureFirebaseInitialized();
     const auth = getAuth();
     const userCredential = await signInWithEmailAndPassword(auth, email, pass);
@@ -269,6 +326,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signUp = async (email: string, pass: string, name?: string) => {
+    localStorage.removeItem('lcr2_dev_user');
+    setRoleOverride(null);
     ensureFirebaseInitialized();
     const auth = getAuth();
     const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
@@ -280,6 +339,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signInWithGoogle = async () => {
+    localStorage.removeItem('lcr2_dev_user');
+    setRoleOverride(null);
     ensureFirebaseInitialized();
     const auth = getAuth();
     const provider = new GoogleAuthProvider();
@@ -296,6 +357,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signOut = async () => {
+    localStorage.removeItem('lcr2_dev_user');
+    setRoleOverride(null);
+    setUser(null);
+    setFirebaseUser(null);
     if (getApps().length) {
       try {
         await firebaseSignOut(getAuth());
@@ -303,12 +368,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('Sign out warning:', err);
       }
     }
-    localStorage.removeItem('lcr2_dev_user');
-    setFirebaseUser(null);
-    setUser(null);
   };
 
-  const loginAsDevRole = (targetRole: UserRole) => {
+  const loginAsDevRole = (targetRole: DevRoleOption) => {
+    localStorage.removeItem('lcr2_dev_user');
+
+    if (targetRole === 'sem_acesso' || targetRole === 'pendente') {
+      setDevRole('conselho');
+      setRoleOverride('council');
+      const devProfile: UserProfile = {
+        uid: 'dev-zero-perms-001',
+        email: 'sem.acesso@alabosque.org',
+        displayName: 'Usuário Sem Acesso',
+        name: 'Usuário Sem Acesso',
+        role: 'conselho',
+        isBishopric: false,
+        canWrite: false,
+        statusAcesso: targetRole === 'pendente' ? 'pendente' : 'aprovado',
+        cargo: targetRole === 'pendente' ? 'Aguardando Aprovação' : 'Membro Sem Acesso',
+        permissoes: getZeroPermissions(),
+        ativo: true,
+      };
+      localStorage.setItem('lcr2_dev_user', JSON.stringify(devProfile));
+      setUser(devProfile);
+      return;
+    }
+
     setDevRole(targetRole);
     setRoleOverride(targetRole === 'bispado' ? 'bishopric' : 'council');
     
@@ -332,6 +417,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       cargo,
       organizacao: org,
       permissoes: getDefaultPermissions(targetRole),
+      statusAcesso: 'aprovado',
       ativo: true,
     };
 
@@ -340,10 +426,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const toggleDevRole = () => {
-    const cur = user?.role || devRole;
-    const nextRole: UserRole = cur === 'bispado' ? 'lider_org' : cur === 'lider_org' ? 'conselho' : 'bispado';
+    const cur = user?.uid === 'dev-zero-perms-001' ? 'sem_acesso' : (user?.role || devRole);
+    const nextRole: DevRoleOption =
+      cur === 'bispado' ? 'lider_org' : cur === 'lider_org' ? 'conselho' : cur === 'conselho' ? 'sem_acesso' : 'bispado';
     loginAsDevRole(nextRole);
   };
+
+  const isBispCalculated = Boolean(user ? (user.isBishopric || user.role === 'bispado') : false);
 
   return (
     <AuthContext.Provider
@@ -351,7 +440,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         firebaseUser,
         loading,
-        isBishopric: (user?.isBishopric || (user?.role || devRole) === 'bispado') ?? false,
+        isBishopric: isBispCalculated,
         canWrite: user?.canWrite ?? false,
         isLoggedIn: !!user,
         role: user?.role ?? devRole,

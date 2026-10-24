@@ -1,3 +1,6 @@
+import { getApps, initializeApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+
 let idTokenProvider: (() => Promise<string | null>) | null = null;
 let currentRoleOverride: 'bishopric' | 'council' | null = null;
 
@@ -16,18 +19,36 @@ export async function apiRequest<T = any>(endpoint: string, options: RequestInit
     headers.set('Content-Type', 'application/json');
   }
 
-  if (idTokenProvider) {
-    try {
-      const token = await idTokenProvider();
-      if (token) {
-        headers.set('Authorization', `Bearer ${token}`);
+  // Retrieve token if Authorization was not manually passed
+  if (!headers.has('Authorization')) {
+    let token: string | null = null;
+    if (idTokenProvider) {
+      try {
+        token = await idTokenProvider();
+      } catch (err) {
+        console.warn('Failed to get auth token from provider:', err);
       }
-    } catch (err) {
-      console.warn('Failed to get auth token:', err);
+    }
+
+    // Direct Firebase currentUser fallback
+    if (!token && typeof window !== 'undefined' && getApps().length > 0) {
+      try {
+        const auth = getAuth();
+        if (auth.currentUser) {
+          token = await auth.currentUser.getIdToken();
+        }
+      } catch (err) {
+        console.warn('Could not read currentUser idToken:', err);
+      }
+    }
+
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
     }
   }
 
-  if (currentRoleOverride) {
+  // ONLY send x-role override if there is NO Authorization header
+  if (currentRoleOverride && !headers.has('Authorization')) {
     headers.set('x-role', currentRoleOverride);
   }
 

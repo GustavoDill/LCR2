@@ -17,6 +17,7 @@ export const TABS: TabInfo[] = [
   { id: 'inicio', path: '/', l: 'Visão geral', i: 'grid', c: '#60a5fa' },
   { id: 'reuniao', path: '/reuniao', l: 'Reunião', i: 'board', c: '#f472b6' },
   { id: 'designacoes', path: '/designacoes', l: 'Designações', i: 'checks', c: '#22d3ee' },
+  { id: 'mural', path: '/mural', l: 'Mural Semanal', i: 'image', c: '#f59e0b' },
   { id: 'chamdes', path: '/chamados-desobrigacoes', l: 'Chamados e desobrigações', i: 'userplus', c: '#c084fc', b: true },
   { id: 'pessoas', path: '/pessoas', l: 'Pessoas', i: 'heart', c: '#fb923c', b: true },
   { id: 'chamados', path: '/chamados', l: 'Lista de Chamados', i: 'idcard', c: '#38bdf8', b: true },
@@ -28,13 +29,13 @@ export const TABS: TabInfo[] = [
   { id: 'natal', path: '/natal', l: 'Festa de Natal', i: 'gift', c: '#f87171' },
   { id: 'indicadores', path: '/indicadores', l: 'Indicadores', i: 'target', c: '#4ade80' },
   { id: 'atas', path: '/atas', l: 'Atas', i: 'file', c: '#2dd4bf' },
-  { id: 'importar', path: '/importar', l: 'Importar dados', i: 'upload', c: '#94a3b8', b: true },
+  { id: 'gerenciamento', path: '/gerenciamento', l: 'Gerenciamento', i: 'shield', c: '#94a3b8', b: true },
 ];
 
 export const NAV_GROUPS = [
-  { g: 'Reuniões', items: ['inicio', 'reuniao', 'designacoes', 'chamdes', 'atas', 'agenda', 'atividades', 'natal'] },
+  { g: 'Reuniões', items: ['inicio', 'reuniao', 'designacoes', 'mural', 'chamdes', 'atas', 'agenda', 'atividades', 'natal'] },
   { g: 'Acompanhamento', items: ['pessoas', 'chamados', 'membros', 'seminario', 'indicadores'] },
-  { g: 'Administração', items: ['financeiro', 'importar'] },
+  { g: 'Administração', items: ['financeiro', 'gerenciamento'] },
 ];
 
 export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
@@ -74,6 +75,12 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
 
   const curTab = TABS.find(t => (t.path === '/' ? location.pathname === '/' : location.pathname.startsWith(t.path))) || TABS[0];
 
+  const totalAllowedTabs = NAV_GROUPS.reduce(
+    (acc, g) => acc + g.items.filter(id => hasPermission(id)).length,
+    0
+  );
+  const isZeroUser = !isBishopric && totalAllowedTabs === 0;
+
   return (
     <div className={`shell ${collapsed ? 'sb-collapsed' : ''} ${mobileOpen ? 'sb-open' : ''}`}>
       <aside className="sb" id="sb" aria-label="Menu principal">
@@ -88,6 +95,10 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
             <small>
               {isBishopric
                 ? 'Bispado'
+                : user?.statusAcesso === 'pendente'
+                ? 'Aguardando Aprovação'
+                : isZeroUser
+                ? 'Sem Acesso'
                 : role === 'lider_org'
                 ? `Líder • ${user?.organizacao || 'Organização'}`
                 : 'Conselho da Ala'}
@@ -97,43 +108,52 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
         </div>
 
         <nav id="tabs">
-          {NAV_GROUPS.map(group => {
-            const available = group.items
-              .map(id => TABS.find(t => t.id === id)!)
-              .filter(t => !t ? false : isBishopric || hasPermission(t.id));
+          {totalAllowedTabs === 0 ? (
+            <div style={{ padding: '24px 16px', textAlign: 'center', color: '#9bb1d4', fontSize: '0.8rem', lineHeight: 1.45 }}>
+              <div style={{ fontSize: '1.6rem', marginBottom: 8 }}>🔒</div>
+              <strong style={{ display: 'block', color: '#fff', marginBottom: 4 }}>Nenhum módulo liberado</strong>
+              Aguardando liberação de permissões pelo Bispado.
+            </div>
+          ) : (
+            NAV_GROUPS.map(group => {
+              // Strictly filter by permission for each tab: if user lacks permission, it is NEVER shown!
+              const available = group.items
+                .map(id => TABS.find(t => t.id === id)!)
+                .filter(t => (t ? hasPermission(t.id) : false));
 
-            if (!available.length) return null;
+              if (!available.length) return null;
 
-            return (
-              <React.Fragment key={group.g}>
-                <div className="sb-sec">{group.g}</div>
-                {available.map(tab => (
-                  <NavLink
-                    key={tab.id}
-                    to={tab.path}
-                    className={({ isActive }) => `sb-item ${isActive ? 'on' : ''}`}
-                    style={{ '--ic': tab.c } as React.CSSProperties}
-                    title={tab.l}
-                    onClick={() => setMobileOpen(false)}
-                  >
-                    <Icon name={tab.i} />
-                    <span className="sb-l">{tab.l}</span>
-                    {tab.id === 'designacoes' && counts.late > 0 && (
-                      <span className="badge crit num">{counts.late}</span>
-                    )}
-                    {tab.id === 'reuniao' && counts.live > 0 && (
-                      <span className="live" title="Reunião em andamento"></span>
-                    )}
-                    {tab.id === 'atividades' && counts.atvPend > 0 && (
-                      <span className="badge crit num" title="Aguardando aprovação">
-                        {counts.atvPend}
-                      </span>
-                    )}
-                  </NavLink>
-                ))}
-              </React.Fragment>
-            );
-          })}
+              return (
+                <React.Fragment key={group.g}>
+                  <div className="sb-sec">{group.g}</div>
+                  {available.map(tab => (
+                    <NavLink
+                      key={tab.id}
+                      to={tab.path}
+                      className={({ isActive }) => `sb-item ${isActive ? 'on' : ''}`}
+                      style={{ '--ic': tab.c } as React.CSSProperties}
+                      title={tab.l}
+                      onClick={() => setMobileOpen(false)}
+                    >
+                      <Icon name={tab.i} />
+                      <span className="sb-l">{tab.l}</span>
+                      {tab.id === 'designacoes' && counts.late > 0 && (
+                        <span className="badge crit num">{counts.late}</span>
+                      )}
+                      {tab.id === 'reuniao' && counts.live > 0 && (
+                        <span className="live" title="Reunião em andamento"></span>
+                      )}
+                      {tab.id === 'atividades' && counts.atvPend > 0 && (
+                        <span className="badge crit num" title="Aguardando aprovação">
+                          {counts.atvPend}
+                        </span>
+                      )}
+                    </NavLink>
+                  ))}
+                </React.Fragment>
+              );
+            })
+          )}
         </nav>
 
         <div className="sb-foot">
@@ -141,24 +161,24 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
             {user?.displayName || user?.email || 'Ala Bosque'}
           </div>
           <div style={{ fontSize: '0.75rem', color: '#9bb1d4', marginTop: 2 }}>
-            {user?.cargo || (isBishopric ? 'Membro do Bispado' : role === 'lider_org' ? 'Líder de Organização' : 'Conselho da Ala')}
+            {user?.cargo || (isBishopric ? 'Membro do Bispado' : role === 'lider_org' ? 'Líder de Organização' : isZeroUser ? 'Sem Permissões' : 'Conselho da Ala')}
           </div>
           <button
             type="button"
             className="btn ghost sm"
             style={{ marginTop: 8, padding: '4px 6px', fontSize: 11, color: '#9bb1d4' }}
             onClick={toggleDevRole}
-            title="Alternar entre visualização de Bispado, Líder de Organização e Conselho"
+            title="Alternar entre visualização de Bispado, Líder de Organização, Conselho e Sem Acesso"
           >
-            Simular: {isBishopric ? 'Bispado (Total)' : role === 'lider_org' ? 'Líder Org' : 'Conselho (Padrão)'} ⇄
+            Simular: {isBishopric ? 'Bispado' : role === 'lider_org' ? 'Líder Org' : isZeroUser ? 'Sem Acesso (Zero)' : 'Conselho'} ⇄
           </button>
         </div>
       </aside>
 
       {mobileOpen && <div className="scrim" onClick={() => setMobileOpen(false)} />}
 
-      <div className="main">
-        <header className="top">
+      <div className="main" id="content">
+        <header className="top" aria-label="Barra de ferramentas superior">
           <button
             type="button"
             className="icon-btn"
@@ -190,10 +210,10 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
                 </div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end', marginTop: 2 }}>
                   <span
-                    className={`badge ${isBishopric ? 'badge-primary' : role === 'lider_org' ? 'badge-warning' : 'badge-info'}`}
+                    className={`badge ${isBishopric ? 'badge-primary' : role === 'lider_org' ? 'badge-warning' : isZeroUser ? 'badge-danger' : 'badge-info'}`}
                     style={{ padding: '1px 5px', fontSize: '0.68rem' }}
                   >
-                    {isBishopric ? 'Bispado' : role === 'lider_org' ? (user?.organizacao || 'Líder Org') : 'Conselho'}
+                    {isBishopric ? 'Bispado' : isZeroUser ? 'Sem Acesso' : role === 'lider_org' ? (user?.organizacao || 'Líder Org') : 'Conselho'}
                   </span>
                   {user?.cargo && <span style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.cargo}</span>}
                 </div>

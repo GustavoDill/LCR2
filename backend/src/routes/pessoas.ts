@@ -7,12 +7,41 @@ const router = Router();
 const CH_FLOW = ['Indicado', 'Aprovação do bispado', 'Entrevista', 'Apoio na sacramental', 'Designação'];
 const D_FLOW = ['Conversar com a pessoa', 'Desobrigar na sacramental', 'Atualizar no LCR'];
 
-router.use(authenticate, requirePermission('pessoas'));
+router.use(authenticate);
+
+function hasPessoasAccess(user: any): boolean {
+  if (user?.isBishopric || user?.role === 'bispado') return true;
+  const p = user?.permissoes?.pessoas;
+  return p === true || p === 'write' || p === 'read';
+}
+
+function hasChamadosAccess(user: any): boolean {
+  if (user?.isBishopric || user?.role === 'bispado') return true;
+  const p = user?.permissoes?.chamados;
+  return p === true || p === 'write' || p === 'read';
+}
+
+function canMutatePessoa(user: any, tipo?: string): boolean {
+  if (user?.isBishopric || user?.role === 'bispado') return true;
+  if (user?.canWrite === false) return false;
+  const hasPessoasWrite = user?.permissoes?.pessoas === true || user?.permissoes?.pessoas === 'write';
+  if (hasPessoasWrite) return true;
+  const hasChamadosWrite = user?.permissoes?.chamados === true || user?.permissoes?.chamados === 'write';
+  if (hasChamadosWrite && (tipo === 'chamado' || !tipo)) return true;
+  return false;
+}
 
 router.get('/', async (req, res) => {
   try {
     const db = getDb();
     const { tipo } = req.query;
+
+    const canPessoas = hasPessoasAccess(req.user);
+    const canChamados = hasChamadosAccess(req.user);
+
+    if (!canPessoas && !canChamados) {
+      return res.status(403).json({ error: 'Acesso negado aos registros de pessoas e chamados.' });
+    }
 
     const snap = await db.collection('conf/b/pessoas').get();
     let items: Pessoa[] = snap.docs.map(doc => ({
@@ -20,7 +49,10 @@ router.get('/', async (req, res) => {
       id: doc.id,
     })) as Pessoa[];
 
-    if (tipo) {
+    // If user only has chamados permission (not general pessoas), restrict strictly to chamados
+    if (!canPessoas) {
+      items = items.filter(p => p.tipo === 'chamado');
+    } else if (tipo) {
       items = items.filter(p => p.tipo === tipo);
     }
 
@@ -35,6 +67,10 @@ router.post('/', requireWrite, async (req, res) => {
   try {
     const db = getDb();
     const { nome, tipo, detalhe, chamado, proxima, responsavel, prazo, obs, cargoRef } = req.body;
+
+    if (!canMutatePessoa(req.user, tipo)) {
+      return res.status(403).json({ error: 'Acesso restrito para criar este tipo de registro.' });
+    }
 
     if (!nome || !nome.trim()) {
       return res.status(400).json({ error: 'O nome é obrigatório.' });
@@ -109,6 +145,10 @@ router.put('/:id', requireWrite, async (req, res) => {
       return res.status(404).json({ error: 'Registro não encontrado.' });
     }
 
+    if (!canMutatePessoa(req.user, snap.data()?.tipo)) {
+      return res.status(403).json({ error: 'Acesso restrito para alterar este registro.' });
+    }
+
     const updatedData = {
       ...req.body,
       atualizadoEm: Date.now(),
@@ -159,6 +199,10 @@ router.post('/:id/advance-chamado', requireWrite, async (req, res) => {
 
     if (!snap.exists) {
       return res.status(404).json({ error: 'Pessoa não encontrada.' });
+    }
+
+    if (!canMutatePessoa(req.user, snap.data()?.tipo)) {
+      return res.status(403).json({ error: 'Acesso restrito para excluir este registro.' });
     }
 
     const p = snap.data() as Pessoa;

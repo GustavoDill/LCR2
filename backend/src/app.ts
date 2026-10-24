@@ -13,6 +13,7 @@ import agendaRoutes from './routes/agenda.js';
 import atividadesRoutes from './routes/atividades.js';
 import natalRoutes from './routes/natal.js';
 import indicadoresRoutes from './routes/indicadores.js';
+import muralRoutes from './routes/mural.js';
 import seedRoutes from './routes/seed.js';
 
 export function createApp() {
@@ -60,6 +61,7 @@ export function createApp() {
   app.use('/api/atividades', atividadesRoutes);
   app.use('/api/natal', natalRoutes);
   app.use('/api/indicadores', indicadoresRoutes);
+  app.use('/api/mural', muralRoutes);
   app.use('/api/seed', seedRoutes);
 
   // Global 404 handler for API routes

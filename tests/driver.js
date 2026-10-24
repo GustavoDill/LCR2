@@ -27,7 +27,7 @@ export async function createDriver() {
 export async function loginAsBispado(driver) {
   await driver.get(`${CONFIG.baseUrl}/login`);
   const devBtn = await driver.wait(
-    until.elementLocated(By.xpath("//button[contains(text(), 'Simular Bispado')]")),
+    until.elementLocated(By.xpath("//button[contains(text(), 'Simular Bispado') or contains(text(), 'Bispado')]")),
     CONFIG.timeout
   );
   await devBtn.click();
@@ -38,7 +38,7 @@ export async function loginAsBispado(driver) {
 export async function loginAsConselho(driver) {
   await driver.get(`${CONFIG.baseUrl}/login`);
   const devBtn = await driver.wait(
-    until.elementLocated(By.xpath("//button[contains(text(), 'Simular Conselho')]")),
+    until.elementLocated(By.xpath("//button[contains(text(), 'Simular Conselho') or contains(text(), 'Conselho')]")),
     CONFIG.timeout
   );
   await devBtn.click();

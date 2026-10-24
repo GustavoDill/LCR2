@@ -345,3 +345,321 @@ function escapeHtml(str: string): string {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+
+
+export interface AccessRequestEmailParams {
+  adminEmails: string[];
+  solicitanteNome: string;
+  solicitanteEmail: string;
+  cargoSolicitado?: string;
+  organizacaoSolicitada?: string;
+  justificativa?: string;
+  dataSolicitacao: string;
+  gerenciamentoUrl: string;
+}
+
+export async function getAdminRecipientsForNewRegistrations(db: any): Promise<string[]> {
+  try {
+    const snap = await db.collection('usuarios').get();
+    const recipients: string[] = [];
+
+    snap.docs.forEach((doc: any) => {
+      const u = doc.data();
+      const hasMgmtWrite = u.isBishopric || u.role === 'bispado' || u.permissoes?.gerenciamento === 'write' || u.permissoes?.gerenciamento === true;
+      if (u.receberNotificacoesCadastro === true && hasMgmtWrite && u.email && u.ativo !== false) {
+        recipients.push(u.email.trim());
+      }
+    });
+
+    // Fallback if no user explicitly has the flag yet: send to bishopric users
+    if (recipients.length === 0) {
+      snap.docs.forEach((doc: any) => {
+        const u = doc.data();
+        if ((u.isBishopric || u.role === 'bispado') && u.email && u.ativo !== false) {
+          recipients.push(u.email.trim());
+        }
+      });
+    }
+
+    // Fallback to environment variables
+    if (recipients.length === 0) {
+      if (process.env.ADMIN_EMAILS) {
+        process.env.ADMIN_EMAILS.split(',').forEach(e => {
+          if (e.trim()) recipients.push(e.trim());
+        });
+      } else if (process.env.SMTP_USER) {
+        recipients.push(process.env.SMTP_USER.trim());
+      }
+    }
+
+    return Array.from(new Set(recipients));
+  } catch (err) {
+    console.error('[EmailService] Erro ao consultar destinatários administradores:', err);
+    return process.env.SMTP_USER ? [process.env.SMTP_USER.trim()] : [];
+  }
+}
+
+export async function sendAccessRequestEmail(params: AccessRequestEmailParams): Promise<SendEmailResult> {
+  const { adminEmails, solicitanteNome, solicitanteEmail, cargoSolicitado, organizacaoSolicitada, justificativa, dataSolicitacao, gerenciamentoUrl } = params;
+  if (!adminEmails || adminEmails.length === 0) {
+    return { success: false, simulated: true, error: 'Nenhum administrador configurado para receber notificações.' };
+  }
+
+  const transporter = getEmailTransporter();
+  const from = getFromAddress();
+  const toList = adminEmails.join(', ');
+  const subject = `[Ala Bosque] Nova Solicitação de Acesso: ${solicitanteNome}`;
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1e293b; background: #f8fafc; margin: 0; padding: 24px; }
+    .card { max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .hdr { background: #24477a; color: #ffffff; padding: 24px 28px; }
+    .hdr h2 { margin: 0 0 6px 0; font-size: 20px; font-weight: 600; }
+    .hdr p { margin: 0; font-size: 13px; color: #cbd5e1; }
+    .body { padding: 28px; }
+    .info-box { background: #f1f5f9; border-radius: 8px; padding: 16px; margin: 20px 0; border: 1px solid #e2e8f0; }
+    .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13.5px; }
+    .info-label { color: #64748b; font-weight: 600; }
+    .info-val { color: #0f172a; font-weight: 700; }
+    .btn { display: inline-block; background: #24477a; color: #ffffff !important; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 14px; text-align: center; margin-top: 10px; }
+    .foot { text-align: center; padding: 18px 28px; font-size: 12px; color: #94a3b8; border-top: 1px solid #f1f5f9; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="hdr">
+      <h2>Ala Bosque · Solicitação de Acesso</h2>
+      <p>Um novo líder cadastrou-se e está aguardando liberação de permissões.</p>
+    </div>
+    <div class="body">
+      <p style="margin-top: 0; font-size: 14px;">Olá, Administrador(a),</p>
+      <p style="font-size: 14px; color: #334155;">
+        O usuário <strong>${escapeHtml(solicitanteNome)}</strong> criou uma conta na plataforma da Ala Bosque e solicitou acesso aos módulos do sistema.
+      </p>
+
+      <div class="info-box">
+        <div class="info-row">
+          <span class="info-label">Nome:</span>
+          <span class="info-val">${escapeHtml(solicitanteNome)}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">E-mail:</span>
+          <span class="info-val">${escapeHtml(solicitanteEmail)}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Chamado Informado:</span>
+          <span class="info-val">${escapeHtml(cargoSolicitado || 'Não informado')}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Organização:</span>
+          <span class="info-val">${escapeHtml(organizacaoSolicitada || 'Não informada')}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Data do Pedido:</span>
+          <span class="info-val">${escapeHtml(dataSolicitacao)}</span>
+        </div>
+        ${justificativa ? `
+        <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #cbd5e1; font-size: 13px;">
+          <strong style="color: #64748b;">Mensagem do Solicitante:</strong><br>
+          <em>"${escapeHtml(justificativa)}"</em>
+        </div>` : ''}
+      </div>
+
+      <p style="font-size: 13.5px; color: #475569;">
+        Por padrão, novos usuários são criados sem nenhuma permissão de acesso. Você pode definir os níveis de leitura e escrita do usuário ou aplicar um preset na <strong>Central de Gerenciamento</strong>.
+      </p>
+
+      <div style="text-align: center; margin: 24px 0 10px 0;">
+        <a href="${escapeHtml(gerenciamentoUrl)}" class="btn" target="_blank">
+          Analisar e Liberar Acesso na Central
+        </a>
+      </div>
+    </div>
+    <div class="foot">
+      Este e-mail foi enviado automaticamente porque você está configurado para receber notificações de novos cadastros na Ala Bosque.
+    </div>
+  </div>
+</body>
+</html>
+  `.trim();
+
+  const textContent = `
+[Ala Bosque - Nova Solicitação de Acesso]
+Nome: ${solicitanteNome}
+E-mail: ${solicitanteEmail}
+Chamado: ${cargoSolicitado || 'Não informado'}
+Organização: ${organizacaoSolicitada || 'Não informada'}
+Data: ${dataSolicitacao}
+${justificativa ? `Mensagem: ${justificativa}\n` : ''}
+
+Acesse a Central de Gerenciamento para liberar as permissões:
+${gerenciamentoUrl}
+  `.trim();
+
+  if (!transporter) {
+    console.log(`\n======================================================`);
+    console.log(`[SIMULAÇÃO DE E-MAIL - NOTIFICAÇÃO DE NOVO CADASTRO]`);
+    console.log(`Para: ${toList}`);
+    console.log(`Assunto: ${subject}`);
+    console.log(`Solicitante: ${solicitanteNome} (${solicitanteEmail})`);
+    console.log(`Chamado: ${cargoSolicitado || 'Não informado'} / ${organizacaoSolicitada || '—'}`);
+    console.log(`Link: ${gerenciamentoUrl}`);
+    console.log(`======================================================\n`);
+    return {
+      success: true,
+      simulated: true,
+      messageId: `sim-${Date.now()}`,
+    };
+  }
+
+  try {
+    const info = await transporter.sendMail({
+      from,
+      to: toList,
+      subject,
+      text: textContent,
+      html: htmlContent,
+    });
+    console.log(`[EmailService] E-mail de solicitação de acesso enviado com sucesso para ${toList}. MessageId: ${info.messageId}`);
+    return { success: true, messageId: info.messageId };
+  } catch (error: any) {
+    console.error(`[EmailService] Erro ao enviar e-mail de notificação de cadastro para ${toList}:`, error);
+    return {
+      success: false,
+      error: error.message || 'Falha ao enviar mensagem pelo servidor SMTP.',
+    };
+  }
+}
+
+
+export interface AccessApprovedEmailParams {
+  to: string;
+  userName: string;
+  cargo?: string;
+  organizacao?: string;
+  appUrl: string;
+}
+
+export async function sendAccessApprovedEmail(params: AccessApprovedEmailParams): Promise<SendEmailResult> {
+  const { to, userName, cargo, organizacao, appUrl } = params;
+  if (!to) {
+    return { success: false, error: 'E-mail de destino inválido.' };
+  }
+
+  const transporter = getEmailTransporter();
+  const from = getFromAddress();
+  const subject = '[Ala Bosque] Seu acesso à plataforma foi liberado!';
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1e293b; background: #f8fafc; margin: 0; padding: 24px; }
+    .card { max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .hdr { background: #16a34a; color: #ffffff; padding: 24px 28px; }
+    .hdr h2 { margin: 0 0 6px 0; font-size: 20px; font-weight: 600; }
+    .hdr p { margin: 0; font-size: 13px; color: #dcfce7; }
+    .body { padding: 28px; }
+    .info-box { background: #f0fdf4; border-radius: 8px; padding: 16px; margin: 20px 0; border: 1px solid #bbf7d0; }
+    .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13.5px; }
+    .info-label { color: #166534; font-weight: 600; }
+    .info-val { color: #0f172a; font-weight: 700; }
+    .btn { display: inline-block; background: #16a34a; color: #ffffff !important; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 14px; text-align: center; margin-top: 10px; }
+    .foot { text-align: center; padding: 18px 28px; font-size: 12px; color: #94a3b8; border-top: 1px solid #f1f5f9; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="hdr">
+      <h2>Ala Bosque · Acesso Liberado</h2>
+      <p>Suas permissões foram concedidas pelo Bispado e Administradores.</p>
+    </div>
+    <div class="body">
+      <p style="margin-top: 0; font-size: 14px;">Olá, <strong>${escapeHtml(userName)}</strong>,</p>
+      <p style="font-size: 14px; color: #334155;">
+        O Bispado da Ala Bosque analisou sua solicitação e liberou o seu acesso à plataforma interna. As permissões referentes ao seu chamado foram configuradas com sucesso.
+      </p>
+
+      <div class="info-box">
+        <div class="info-row">
+          <span class="info-label">Usuário:</span>
+          <span class="info-val">${escapeHtml(userName)}</span>
+        </div>
+        ${cargo ? `
+        <div class="info-row">
+          <span class="info-label">Chamado / Atribuição:</span>
+          <span class="info-val">${escapeHtml(cargo)}</span>
+        </div>` : ''}
+        ${organizacao ? `
+        <div class="info-row">
+          <span class="info-label">Organização:</span>
+          <span class="info-val">${escapeHtml(organizacao)}</span>
+        </div>` : ''}
+      </div>
+
+      <div style="text-align: center; margin: 24px 0 10px 0;">
+        <a href="${escapeHtml(appUrl)}" class="btn" target="_blank">
+          Acessar a Plataforma
+        </a>
+      </div>
+    </div>
+    <div class="foot">
+      Ala Bosque · A Igreja de Jesus Cristo dos Santos dos Últimos Dias
+    </div>
+  </div>
+</body>
+</html>
+  `.trim();
+
+  const textContent = `
+[Ala Bosque - Acesso Liberado]
+Olá, ${userName}!
+
+O Bispado da Ala Bosque aprovou seu acesso à plataforma.
+Chamado: ${cargo || 'Líder'}
+Organização: ${organizacao || '—'}
+
+Acesse agora:
+${appUrl}
+  `.trim();
+
+  if (!transporter) {
+    console.log('\n======================================================');
+    console.log('[SIMULAÇÃO DE E-MAIL - ACESSO LIBERADO]');
+    console.log('Para: ' + to);
+    console.log('Assunto: ' + subject);
+    console.log('Usuário: ' + userName);
+    console.log('Link: ' + appUrl);
+    console.log('======================================================\n');
+    return {
+      success: true,
+      simulated: true,
+      messageId: 'sim-' + Date.now(),
+    };
+  }
+
+  try {
+    const info = await transporter.sendMail({
+      from,
+      to,
+      subject,
+      text: textContent,
+      html: htmlContent,
+    });
+    console.log('[EmailService] E-mail de liberação de acesso enviado com sucesso para ' + to + '. MessageId: ' + info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error: any) {
+    console.error('[EmailService] Erro ao enviar e-mail de liberação para ' + to + ':', error);
+    return {
+      success: false,
+      error: error.message || 'Falha ao enviar mensagem pelo servidor SMTP.',
+    };
+  }
+}

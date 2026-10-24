@@ -1,17 +1,83 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Ata } from '../types';
-import { IconCalendar, IconCheck, IconSearch, IconChevronRight } from '../components/Icons';
+import { IconCalendar, IconCheck, IconSearch, IconChevronRight, IconEdit, IconTrash } from '../components/Icons';
+import { PAUTA } from './Reuniao/reuniaoConstants';
+
+function getSectionLabel(tipo: 'bispado' | 'conselho', key: string): { keyBadge: string; title: string } {
+  const sections = PAUTA[tipo] || [];
+  const found = sections.find(s => s.k === key);
+  if (found) {
+    return {
+      keyBadge: found.k,
+      title: `Seção ${found.k} · ${found.t}`,
+    };
+  }
+  return {
+    keyBadge: key,
+    title: key.replace(/^[_s-]+/, '').replace(/-/g, ' '),
+  };
+}
 
 export const Atas: React.FC = () => {
-  const { isBishopric } = useAuth();
+  const navigate = useNavigate();
+  const { isBishopric, canWrite } = useAuth();
   const [atas, setAtas] = useState<Ata[]>([]);
   const [loading, setLoading] = useState(true);
   const [tipoFiltro, setTipoFiltro] = useState<string>('todos');
   const [busca, setBusca] = useState('');
   const [ataSelecionada, setAtaSelecionada] = useState<Ata | null>(null);
   const [copiado, setCopiado] = useState(false);
+  const [acaoLoading, setAcaoLoading] = useState(false);
+
+  const podeGerenciarAta = (a?: Ata | null) => {
+    if (!a || !canWrite) return false;
+    if (a.tipo === 'bispado') return isBishopric;
+    return true;
+  };
+
+  const handleResumirAta = async (ataAlvo?: Ata) => {
+    const alvo = ataAlvo || ataSelecionada;
+    if (!alvo) return;
+
+    try {
+      setAcaoLoading(true);
+      await api.post(`/reunioes/${alvo.id}/reopen`, { tipo: alvo.tipo });
+      navigate('/reuniao', { state: { meetingId: alvo.id, tipo: alvo.tipo } });
+    } catch (err: any) {
+      alert(err.message || 'Erro ao resumir ata para edição.');
+    } finally {
+      setAcaoLoading(false);
+    }
+  };
+
+  const handleExcluirAta = async (ataAlvo?: Ata) => {
+    const alvo = ataAlvo || ataSelecionada;
+    if (!alvo) return;
+
+    const dataFmt = new Date(alvo.data).toLocaleDateString('pt-BR');
+    const tipoFmt = alvo.tipo === 'bispado' ? 'do Bispado' : 'do Conselho da Ala';
+    if (!window.confirm(`Tem certeza de que deseja excluir permanentemente a ata ${tipoFmt} de ${dataFmt}?\n\nEsta ação apagará as anotações desta reunião e não poderá ser desfeita.`)) {
+      return;
+    }
+
+    try {
+      setAcaoLoading(true);
+      await api.delete(`/reunioes/${alvo.id}?tipo=${alvo.tipo}`);
+
+      const novasAtas = atas.filter(a => a.id !== alvo.id);
+      setAtas(novasAtas);
+      if (ataSelecionada?.id === alvo.id) {
+        setAtaSelecionada(novasAtas.length > 0 ? novasAtas[0] : null);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Erro ao excluir ata.');
+    } finally {
+      setAcaoLoading(false);
+    }
+  };
 
   useEffect(() => {
     carregarAtas();
@@ -20,7 +86,7 @@ export const Atas: React.FC = () => {
   const carregarAtas = async () => {
     try {
       setLoading(true);
-      const res = await api.get<Ata[]>('/api/reunioes/atas');
+      const res = await api.get<Ata[]>('/atas');
       setAtas(res || []);
       if (res && res.length > 0) {
         setAtaSelecionada(res[0]);
@@ -49,21 +115,30 @@ export const Atas: React.FC = () => {
     const a = ataSelecionada;
     let txt = `*ATA DE REUNIÃO - ${a.tipo?.toUpperCase()}*\n`;
     txt += `Data: ${new Date(a.data).toLocaleDateString('pt-BR')}\n`;
-    if (a.oracaoAbertura) txt += `Oração Inicial: ${a.oracaoAbertura}\n`;
-    if (a.pensamentoEspiritual) txt += `Mensagem Espiritual: ${a.pensamentoEspiritual}\n`;
+    const oracaoIni = a.oracaoAbertura || a.notas?._oracaoAbertura;
+    if (oracaoIni) txt += `Oração Inicial: ${oracaoIni}\n`;
+    const mensagem = a.pensamentoEspiritual || a.notas?._pensamentoEspiritual;
+    if (mensagem) txt += `Mensagem Espiritual: ${mensagem}\n`;
     txt += `\n*TÓPICOS TRATADOS:*\n`;
 
-    if (a.notas && Object.keys(a.notas).length > 0) {
-      Object.entries(a.notas).forEach(([secaoId, texto]) => {
-        if (texto && texto.trim()) {
-          txt += `\n• *${secaoId.toUpperCase()}*:\n${texto}\n`;
-        }
+    const pres = a.notas?._pres;
+    if (pres) txt += `Presentes: ${pres}\n`;
+
+    const secoesAnotadas = Object.entries(a.notas || {}).filter(
+      ([key, texto]) => !key.startsWith('_') && texto && texto.trim()
+    );
+
+    if (secoesAnotadas.length > 0) {
+      secoesAnotadas.forEach(([secaoId, texto]) => {
+        const info = getSectionLabel(a.tipo, secaoId);
+        txt += `\n• *${info.title.toUpperCase()}*:\n${texto}\n`;
       });
     } else {
-      txt += `Sem anotações registradas.\n`;
+      txt += `Sem anotações de tópicos registradas.\n`;
     }
 
-    if (a.oracaoEncerramento) txt += `\nOração Final: ${a.oracaoEncerramento}\n`;
+    const oracaoFim = a.oracaoEncerramento || a.notas?._oracaoEncerramento;
+    if (oracaoFim) txt += `\nOração Final: ${oracaoFim}\n`;
 
     navigator.clipboard.writeText(txt);
     setCopiado(true);
@@ -140,15 +215,75 @@ export const Atas: React.FC = () => {
                     </div>
 
                     <div style={{ fontSize: '0.85rem', color: 'var(--color-text)', marginTop: 8, fontWeight: 500 }}>
-                      {a.pensamentoEspiritual ? `Msg: "${a.pensamentoEspiritual.slice(0, 45)}..."` : 'Sem mensagem registrada'}
+                      {(() => {
+  const msg = a.pensamentoEspiritual || a.notas?._pensamentoEspiritual;
+  return msg ? `Msg: "${msg.slice(0, 45)}${msg.length > 45 ? '...' : ''}"` : 'Sem mensagem registrada';
+})()}
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
                       <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                        {Object.keys(a.notas || {}).length} tópicos anotados
+                        {(() => {
+  const count = Object.keys(a.notas || {}).filter(k => !k.startsWith('_')).length;
+  return `${count} ${count === 1 ? 'tópico anotado' : 'tópicos anotados'}`;
+})()}
                       </span>
                       <IconChevronRight size={14} color="var(--color-text-muted)" />
                     </div>
+
+                    {isSelected && podeGerenciarAta(a) && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: 6,
+                          marginTop: 10,
+                          paddingTop: 8,
+                          borderTop: '1px solid var(--color-border)',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleResumirAta(a);
+                          }}
+                          disabled={acaoLoading}
+                          style={{
+                            fontSize: '0.78rem',
+                            padding: '4px 8px',
+                            flex: 1,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 4,
+                          }}
+                          title="Voltar para a tela de condução e edição desta reunião"
+                        >
+                          <IconEdit size={13} /> Resumir ata
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleExcluirAta(a);
+                          }}
+                          disabled={acaoLoading}
+                          style={{
+                            fontSize: '0.78rem',
+                            padding: '4px 8px',
+                            color: 'var(--color-danger, #dc2626)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                          title="Excluir ata"
+                        >
+                          <IconTrash size={13} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -173,70 +308,154 @@ export const Atas: React.FC = () => {
                   </h2>
                 </div>
 
-                <button className="btn btn-secondary" onClick={handleCopiarResumo}>
-                  {copiado ? (
-                    <>
-                      <IconCheck size={16} color="var(--color-success)" /> Copiado!
-                    </>
-                  ) : (
-                    'Copiar para WhatsApp/Email'
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <button className="btn btn-secondary" onClick={handleCopiarResumo} title="Copiar resumo para WhatsApp ou E-mail">
+                    {copiado ? (
+                      <>
+                        <IconCheck size={16} color="var(--color-success)" /> Copiado!
+                      </>
+                    ) : (
+                      'Copiar Resumo'
+                    )}
+                  </button>
+
+                  {podeGerenciarAta(ataSelecionada) && (
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => handleResumirAta()}
+                      disabled={acaoLoading}
+                      title="Voltar para a seção de condução e edição desta reunião"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    >
+                      <IconEdit size={16} /> Resumir ata
+                    </button>
                   )}
-                </button>
+
+                  {podeGerenciarAta(ataSelecionada) && (
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => handleExcluirAta()}
+                      disabled={acaoLoading}
+                      title="Excluir permanentemente este registro de ata"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        color: 'var(--color-danger, #dc2626)',
+                        borderColor: 'var(--color-danger, #dc2626)',
+                      }}
+                    >
+                      <IconTrash size={16} /> Excluir ata
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {/* Prayers and thought */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24, padding: 14, background: 'var(--color-surface-hover)', borderRadius: 'var(--radius)' }}>
-                <div>
-                  <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)', fontWeight: 600 }}>
-                    Oração Inicial
+              {/* Prayers, thought and attendees */}
+              <div style={{ marginBottom: 24, padding: 16, background: 'var(--color-surface-hover)', borderRadius: 'var(--radius)', border: '1px solid var(--color-border)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)', fontWeight: 600 }}>
+                      🙏 Oração Inicial
+                    </div>
+                    <div style={{ fontWeight: 600, marginTop: 2, color: 'var(--color-text)' }}>
+                      {ataSelecionada.oracaoAbertura || ataSelecionada.notas?._oracaoAbertura || 'Não informado'}
+                    </div>
                   </div>
-                  <div style={{ fontWeight: 600, marginTop: 2 }}>{ataSelecionada.oracaoAbertura || 'Não informado'}</div>
+
+                  <div>
+                    <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)', fontWeight: 600 }}>
+                      📖 Mensagem Espiritual
+                    </div>
+                    <div style={{ fontWeight: 600, marginTop: 2, color: 'var(--color-text)' }}>
+                      {ataSelecionada.pensamentoEspiritual || ataSelecionada.notas?._pensamentoEspiritual || 'Não informado'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)', fontWeight: 600 }}>
+                      ✨ Oração Final
+                    </div>
+                    <div style={{ fontWeight: 600, marginTop: 2, color: 'var(--color-text)' }}>
+                      {ataSelecionada.oracaoEncerramento || ataSelecionada.notas?._oracaoEncerramento || 'Não informado'}
+                    </div>
+                  </div>
                 </div>
 
-                <div>
-                  <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)', fontWeight: 600 }}>
-                    Mensagem Espiritual
+                {/* Presentes */}
+                {(ataSelecionada.notas?._pres || (ataSelecionada as any).presentes) && (
+                  <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--color-border)' }}>
+                    <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)', fontWeight: 600 }}>
+                      Líderes Presentes
+                    </div>
+                    <div style={{ fontWeight: 500, fontSize: '0.9rem', marginTop: 3, color: 'var(--color-text)' }}>
+                      {ataSelecionada.notas?._pres || (ataSelecionada as any).presentes}
+                    </div>
                   </div>
-                  <div style={{ fontWeight: 600, marginTop: 2 }}>{ataSelecionada.pensamentoEspiritual || 'Não informado'}</div>
-                </div>
-
-                <div>
-                  <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)', fontWeight: 600 }}>
-                    Oração Final
-                  </div>
-                  <div style={{ fontWeight: 600, marginTop: 2 }}>{ataSelecionada.oracaoEncerramento || 'Não informado'}</div>
-                </div>
+                )}
               </div>
 
               {/* Sections Notes */}
               <div>
                 <h3 style={{ fontSize: '1.1rem', marginBottom: 12 }}>Anotações das Seções Pautadas</h3>
-                {ataSelecionada.notas && Object.keys(ataSelecionada.notas).length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    {Object.entries(ataSelecionada.notas).map(([secaoId, texto]) => (
-                      <div
-                        key={secaoId}
-                        style={{
-                          padding: 14,
-                          background: 'var(--color-surface)',
-                          border: '1px solid var(--color-border)',
-                          borderRadius: 'var(--radius)',
-                        }}
-                      >
-                        <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-primary)', textTransform: 'capitalize', marginBottom: 6 }}>
-                          {secaoId.replace(/-/g, ' ')}
-                        </div>
-                        <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem', lineHeight: 1.5 }}>
-                          {texto || <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic' }}>Sem anotações registradas.</span>}
-                        </div>
+                {(() => {
+                  const pautaNotas = Object.entries(ataSelecionada.notas || {}).filter(
+                    ([key, texto]) => !key.startsWith('_') && texto && texto.trim()
+                  );
+
+                  if (pautaNotas.length === 0) {
+                    return (
+                      <div style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', padding: 14, background: 'var(--color-surface-hover)', borderRadius: 'var(--radius)' }}>
+                        Nenhum tópico com anotações registrado nesta reunião.
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                    Nenhum tópico com anotações registrado nesta reunião.
-                  </div>
-                )}
+                    );
+                  }
+
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                      {pautaNotas.map(([secaoId, texto]) => {
+                        const info = getSectionLabel(ataSelecionada.tipo, secaoId);
+                        return (
+                          <div
+                            key={secaoId}
+                            style={{
+                              padding: 14,
+                              background: 'var(--color-surface)',
+                              border: '1px solid var(--color-border)',
+                              borderRadius: 'var(--radius)',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  width: 26,
+                                  height: 26,
+                                  borderRadius: '50%',
+                                  background: ataSelecionada.tipo === 'bispado' ? 'var(--bisp, #24477a)' : 'var(--cons, #2d6a4d)',
+                                  color: '#fff',
+                                  fontSize: '0.8rem',
+                                  fontWeight: 700,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {info.keyBadge}
+                              </span>
+                              <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--color-primary)' }}>
+                                {info.title}
+                              </span>
+                            </div>
+                            <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem', lineHeight: 1.5, paddingLeft: 34, color: 'var(--color-text)' }}>
+                              {texto}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           ) : (

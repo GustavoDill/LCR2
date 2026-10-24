@@ -1,0 +1,10 @@
+export { Atividades } from './Atividades';
+export * from './atividadesConstants';
+export * from './atividadesUtils';
+export * from './AtividadeCard';
+export * from './AtividadesStatsCards';
+export * from './AtividadesFilterTabs';
+export * from './AtividadesHowItWorks';
+export * from './AtividadeDetailModal';
+export * from './AtividadeFormModal';
+export * from './AtividadeFeedbackModal';
