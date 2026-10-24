@@ -249,9 +249,9 @@ export function registerOnboardingPermissoesTests(runner) {
         CONFIG.timeout
       );
       await btnUsuarios.click();
-      await driver.sleep(400);
 
-      // Check UID code badge in table
+      // Wait for table rows to load and check UID code badge
+      await driver.wait(until.elementLocated(By.xpath("//td//code")), CONFIG.timeout);
       const uidCodes = await driver.findElements(By.xpath("//td//code[contains(text(), 'dev-') or contains(text(), 'local-') or string-length(text()) > 0]"));
       if (uidCodes.length === 0) {
         throw new Error('Nenhum identificador UID encontrado nas linhas da tabela de usuários.');

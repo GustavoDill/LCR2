@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
-    "dev": "tsx watch src/server.ts"
+    "dev": "tsx watch src/server.ts",
+    "set-admin": "tsx scripts/set-system-admin.ts"
   },
   "dependencies": {
     "@types/cors": "^2.8.17",

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, UserPermissions, PermissionLevel } from '../../types';
 import { api } from '../../api/client';
+import { isSystemAdminUid } from '../../context/AuthContext';
 import { IconCheck, IconShield, IconSparkles } from '../../components/Icons';
 import { MODULOS_GERENCIAMENTO, PRESETS_PERMISSOES } from './gerenciamentoConstants';
 
@@ -140,7 +141,7 @@ export const GerenciamentoPermissoesTab: React.FC<GerenciamentoPermissoesTabProp
             >
               {usuarios.map(u => (
                 <option key={u.uid} value={u.uid}>
-                  {u.statusAcesso === 'pendente' ? '⏳ [PENDENTE] ' : ''}
+                  {u.uid && isSystemAdminUid(u.uid) ? '👑 [SISTEMA] ' : u.statusAcesso === 'pendente' ? '⏳ [PENDENTE] ' : ''}
                   {u.displayName || u.name || u.email} ({u.cargo || u.role}) • UID: {u.uid}
                 </option>
               ))}
@@ -152,7 +153,21 @@ export const GerenciamentoPermissoesTab: React.FC<GerenciamentoPermissoesTabProp
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontWeight: 600, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
                   {activeUser.displayName || activeUser.email}
-                  {isPending && (
+                  {isSystemAdminUid(activeUser.uid) && (
+                    <span
+                      style={{
+                        fontSize: '0.72rem',
+                        padding: '2px 8px',
+                        borderRadius: 999,
+                        background: 'rgba(234, 179, 8, 0.2)',
+                        color: '#a16207',
+                        fontWeight: 700,
+                      }}
+                    >
+                      👑 Conta do Sistema
+                    </span>
+                  )}
+                  {isPending && !isSystemAdminUid(activeUser.uid) && (
                     <span
                       style={{
                         fontSize: '0.72rem',

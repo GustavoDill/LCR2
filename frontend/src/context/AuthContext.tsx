@@ -36,6 +36,15 @@ export function getZeroPermissions(): UserPermissions {
   };
 }
 
+export const SYSTEM_ADMIN_UIDS = [
+  'Pjx9THHjCQXYBL5QXgvXDfjvSzP2',
+];
+
+export function isSystemAdminUid(uid?: string): boolean {
+  if (!uid) return false;
+  return SYSTEM_ADMIN_UIDS.includes(uid);
+}
+
 export function getDefaultPermissions(role: UserRole): UserPermissions {
   if (role === 'bispado') {
     return {
@@ -204,7 +213,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const tokenResult = await fUser.getIdTokenResult();
+    const isSysAdmin = isSystemAdminUid(fUser.uid);
     const isBisp = Boolean(
+      isSysAdmin ||
+      tokenResult.claims.systemAdmin ||
       tokenResult.claims.isBishopric ||
       tokenResult.claims.role === 'bispado' ||
       fUser.email?.toLowerCase().includes('bispo')
@@ -227,6 +239,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const hasPermission = (moduloId: string): boolean => {
+    // 0. System Master Admin always has full access
+    if (user?.uid && isSystemAdminUid(user.uid)) {
+      return true;
+    }
+
     // 1. If user is pending or refused, they have ZERO access
     if (user?.statusAcesso === 'pendente' || user?.statusAcesso === 'recusado') {
       return false;
@@ -432,7 +449,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loginAsDevRole(nextRole);
   };
 
-  const isBispCalculated = Boolean(user ? (user.isBishopric || user.role === 'bispado') : false);
+  const isBispCalculated = Boolean(
+    user ? (user.isBishopric || user.role === 'bispado' || isSystemAdminUid(user.uid)) : false
+  );
 
   return (
     <AuthContext.Provider

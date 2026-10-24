@@ -96,6 +96,16 @@ export function getZeroPermissions(): UserPermissions {
   };
 }
 
+export const SYSTEM_ADMIN_UIDS: string[] = [
+  'Pjx9THHjCQXYBL5QXgvXDfjvSzP2',
+  ...(process.env.SYSTEM_ADMIN_UIDS ? process.env.SYSTEM_ADMIN_UIDS.split(',').map(s => s.trim()) : []),
+];
+
+export function isSystemAdminUid(uid?: string): boolean {
+  if (!uid) return false;
+  return SYSTEM_ADMIN_UIDS.includes(uid);
+}
+
 export async function authenticate(req: Request, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
   const devAllowAnonymous = process.env.DEV_ALLOW_ANONYMOUS === 'true';
@@ -158,24 +168,65 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     const email = decoded.email || '';
     const displayName = decoded.name || email.split('@')[0] || 'Usuário';
 
+    const isSysAdmin = isSystemAdminUid(uid);
+
     // Retrieve or initialize user profile in Firestore
     const userDocRef = db.collection('usuarios').doc(uid);
-    const userDoc = await userDocRef.get();
+    let userDoc: any = null;
+    let isQuotaExceeded = false;
+
+    try {
+      userDoc = await userDocRef.get();
+    } catch (err: any) {
+      if (err.message?.includes('Quota exceeded') || err.code === 8 || err.details === 'Quota exceeded.') {
+        console.warn('⚠️ Firestore quota exceeded. Using in-memory fallback profile.');
+        isQuotaExceeded = true;
+      } else {
+        throw err;
+      }
+    }
 
     let profile: UserProfile;
 
-    if (userDoc.exists) {
+    if (isQuotaExceeded) {
+      const isBisp = isSysAdmin || decoded.role === 'bispado' || decoded.isBishopric === true || email.toLowerCase().includes('bispo');
+      profile = {
+        uid,
+        email,
+        displayName,
+        role: isBisp ? 'bispado' : (decoded.role || 'conselho'),
+        isBishopric: isBisp,
+        canWrite: isBisp || decoded.canWrite === true,
+        cargo: isSysAdmin ? 'Secretário Geral / Administrador' : (isBisp ? 'Membro do Bispado' : 'Conselho da Ala'),
+        permissoes: isBisp ? getDefaultPermissions('bispado') : getDefaultPermissions(decoded.role || 'conselho'),
+        ativo: true,
+        statusAcesso: isBisp ? 'aprovado' : (decoded.statusAcesso || 'aprovado'),
+        receberNotificacoesCadastro: isBisp,
+        criadoEm: Date.now(),
+        ultimoAcesso: Date.now(),
+      };
+      req.user = profile;
+      return next();
+    }
+
+    if (userDoc && userDoc.exists) {
       const data = userDoc.data() as any;
-      if (data.ativo === false) {
+      if (data.ativo === false && !isSysAdmin) {
         res.status(403).json({ error: 'Sua conta de usuário foi desativada pelo Bispado.' });
         return;
       }
 
-      const role: UserRole = data.role || (data.isBishopric ? 'bispado' : 'conselho');
-      const isBisp = role === 'bispado' || data.isBishopric === true;
-      const statusAcesso: 'pendente' | 'aprovado' | 'recusado' = data.statusAcesso || (isBisp ? 'aprovado' : (data.permissoes ? 'aprovado' : 'pendente'));
-      const defaultPerms = statusAcesso === 'pendente' ? getZeroPermissions() : getDefaultPermissions(role);
-      const permissoes = { ...defaultPerms, ...(data.permissoes || {}) };
+      const role: UserRole = isSysAdmin ? 'bispado' : (data.role || (data.isBishopric ? 'bispado' : 'conselho'));
+      const isBisp = isSysAdmin || role === 'bispado' || data.isBishopric === true;
+      const statusAcesso: 'pendente' | 'aprovado' | 'recusado' = isSysAdmin
+        ? 'aprovado'
+        : (data.statusAcesso || (isBisp ? 'aprovado' : (data.permissoes ? 'aprovado' : 'pendente')));
+      const defaultPerms = isSysAdmin
+        ? getDefaultPermissions('bispado')
+        : (statusAcesso === 'pendente' ? getZeroPermissions() : getDefaultPermissions(role));
+      const permissoes = isSysAdmin
+        ? getDefaultPermissions('bispado')
+        : { ...defaultPerms, ...(data.permissoes || {}) };
 
       profile = {
         uid,
@@ -183,27 +234,43 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
         displayName: data.displayName || displayName,
         role,
         isBishopric: isBisp,
-        canWrite: data.canWrite !== false && statusAcesso === 'aprovado',
-        cargo: data.cargo || (isBisp ? 'Membro do Bispado' : role === 'lider_org' ? 'Líder de Organização' : statusAcesso === 'pendente' ? 'Aguardando Aprovação' : 'Líder do Conselho'),
+        canWrite: true,
+        cargo: isSysAdmin
+          ? (data.cargo && data.cargo !== 'Aguardando Aprovação' ? data.cargo : 'Administrador do Sistema')
+          : (data.cargo || (isBisp ? 'Membro do Bispado' : role === 'lider_org' ? 'Líder de Organização' : statusAcesso === 'pendente' ? 'Aguardando Aprovação' : 'Líder do Conselho')),
         organizacao: data.organizacao,
         permissoes,
-        ativo: data.ativo !== false,
+        ativo: true,
         statusAcesso,
         solicitacaoAcesso: data.solicitacaoAcesso,
-        receberNotificacoesCadastro: data.receberNotificacoesCadastro === true,
+        receberNotificacoesCadastro: isSysAdmin ? true : (data.receberNotificacoesCadastro === true),
         criadoEm: data.criadoEm || Date.now(),
         ultimoAcesso: Date.now(),
       };
 
-      // Asynchronously record last access
-      userDocRef.update({ ultimoAcesso: Date.now() }).catch(() => {});
+      // Asynchronously record last access and ensure system admin claims/data are synced
+      if (isSysAdmin && (data.statusAcesso !== 'aprovado' || data.role !== 'bispado' || !data.isBishopric || data.ativo === false)) {
+        userDocRef.set({
+          role: 'bispado',
+          isBishopric: true,
+          canWrite: true,
+          statusAcesso: 'aprovado',
+          ativo: true,
+          cargo: profile.cargo,
+          permissoes: getDefaultPermissions('bispado'),
+          receberNotificacoesCadastro: true,
+          ultimoAcesso: Date.now(),
+        }, { merge: true }).catch(() => {});
+      } else {
+        userDocRef.update({ ultimoAcesso: Date.now() }).catch(() => {});
+      }
     } else {
       // User doesn't exist yet in Firestore
       // Check if this is the very first user in the system
       const existingSnapshot = await db.collection('usuarios').limit(1).get();
       const isFirstUser = existingSnapshot.empty;
 
-      const isBishop = isFirstUser || email.toLowerCase().includes('bispo');
+      const isBishop = isSysAdmin || isFirstUser || email.toLowerCase().includes('bispo');
       const assignedRole: UserRole = isBishop ? 'bispado' : 'conselho';
       const initialPerms = isBishop ? getDefaultPermissions('bispado') : getZeroPermissions();
 
@@ -214,7 +281,7 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
         role: assignedRole,
         isBishopric: isBishop,
         canWrite: isBishop,
-        cargo: isBishop ? 'Bispo / Administrador' : 'Aguardando Aprovação',
+        cargo: isSysAdmin ? 'Administrador do Sistema' : (isBishop ? 'Bispo / Administrador' : 'Aguardando Aprovação'),
         permissoes: initialPerms,
         ativo: true,
         statusAcesso: isBishop ? 'aprovado' : 'pendente',
