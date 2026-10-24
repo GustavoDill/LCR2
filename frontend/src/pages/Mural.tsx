@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { toPng } from 'html-to-image';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { Membro, MuralData, MuralDiscursanteDom } from '../types';
+import { Membro, MuralAlmocoItem, MuralData, MuralDiscursanteDom } from '../types';
+import logoBosqueSagrado from '../assets/logo-bosque-sagrado.png';
 
 const COME_FOLLOW_ME_2026_URL =
   'https://beta.churchofjesuschrist.org/study/manual/come-follow-me-for-home-and-church-old-testament-2026?lang=por';
@@ -95,6 +96,142 @@ export function buildDiscursantesForMonth(
       data: sundayLabel,
       nomes: byIndex ? byIndex.nomes : idx === 0 ? 'Testemunhos' : '',
     };
+  });
+}
+
+export const DIAS_DA_SEMANA_NOMES = [
+  'Segunda',
+  'Terça',
+  'Quarta',
+  'Quinta',
+  'Sexta',
+  'Sábado',
+  'Domingo',
+];
+
+/**
+ * Retorna a data da segunda-feira da semana de uma data de referência (segunda a domingo).
+ * Se a data for domingo (day 0), pertence à semana que começou na segunda-feira 6 dias antes.
+ */
+export function getMondayOfWeek(refDate: Date = new Date()): Date {
+  const d = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate());
+  const day = d.getDay(); // 0 = Domingo, 1 = Segunda, ..., 6 = Sábado
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diffToMonday);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/**
+ * Retorna a data do domingo correspondente ao encerramento da semana (segunda a domingo).
+ */
+export function getSundayOfWeek(refDate: Date = new Date()): Date {
+  const monday = getMondayOfWeek(refDate);
+  const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
+  return sunday;
+}
+
+/**
+ * Tenta fazer o parse de uma string de data no formato DD/MM/AA ou DD/MM/YYYY.
+ */
+export function parseDateFromTopo(dataTopo?: string): Date | null {
+  if (!dataTopo) return null;
+  const parts = dataTopo.trim().split(/[/-]/);
+  if (parts.length >= 3) {
+    const day = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    let year = parseInt(parts[2], 10);
+    if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+      if (year < 100) year = 2000 + year;
+      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        const d = new Date(year, month - 1, day);
+        if (d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day) {
+          return d;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Constrói a lista dos 7 dias da semana (Segunda a Domingo) para o Almoço das Sisteres.
+ * Segunda-feira é sempre a primeira como 'Pday'.
+ * Preserva responsáveis já preenchidos caso correspondam ao dia da semana.
+ */
+export function buildCurrentWeekAlmoco(
+  baseDate: Date = new Date(),
+  existing: MuralAlmocoItem[] = []
+): MuralAlmocoItem[] {
+  const monday = getMondayOfWeek(baseDate);
+
+  return DIAS_DA_SEMANA_NOMES.map((diaSemana, idx) => {
+    const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + idx);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const diaLabel = `Dia ${dd}`;
+
+    // Busca se já existe um responsável preenchido para esse dia da semana
+    const match = existing.find(
+      e => e.diaSemana?.trim().toLowerCase() === diaSemana.toLowerCase()
+    );
+
+    let responsavel = '';
+    if (idx === 0) {
+      // Segunda-feira é sempre a primeira como P-Day
+      responsavel = match?.responsavel && match.responsavel.trim() !== '' ? match.responsavel : 'P-Day';
+    } else if (match) {
+      responsavel = match.responsavel || '';
+    }
+
+    const isPday = idx === 0 || responsavel.toLowerCase().includes('pday') || responsavel.toLowerCase().includes('p-day');
+    const destaque = match?.destaque !== undefined ? Boolean(match.destaque) : isPday;
+
+    return {
+      dia: diaLabel,
+      diaSemana,
+      responsavel,
+      destaque,
+    };
+  });
+}
+
+/**
+ * Normaliza os dados de Almoço das Sisteres garantindo que contenha os 7 dias (Segunda a Domingo)
+ * com Segunda como primeiro dia e P-Day destacado com faixa por padrão.
+ */
+export function normalizeAlmocoSisteres(
+  rawList: MuralAlmocoItem[] | undefined,
+  refDate: Date = new Date()
+): MuralAlmocoItem[] {
+  if (!rawList || rawList.length === 0) {
+    return buildCurrentWeekAlmoco(refDate);
+  }
+
+  const startsWithMonday = rawList[0]?.diaSemana?.trim().toLowerCase() === 'segunda';
+  if (!startsWithMonday || rawList.length !== 7) {
+    return buildCurrentWeekAlmoco(
+      refDate,
+      rawList.map(item => {
+        const isPday =
+          item.diaSemana?.toLowerCase() === 'segunda' ||
+          item.responsavel?.toLowerCase().includes('pday') ||
+          item.responsavel?.toLowerCase().includes('p-day');
+        return isPday ? { ...item, destaque: true } : item;
+      })
+    );
+  }
+
+  return rawList.map((item, idx) => {
+    if (idx === 0) {
+      const responsavel = !item.responsavel || item.responsavel.trim() === '' ? 'P-Day' : item.responsavel;
+      const isPday = responsavel.toLowerCase().includes('pday') || responsavel.toLowerCase().includes('p-day');
+      return {
+        ...item,
+        responsavel,
+        destaque: item.destaque !== undefined ? item.destaque : isPday,
+      };
+    }
+    return item;
   });
 }
 
@@ -253,37 +390,31 @@ function getCurrentWeekLesson(): ComeFollowMeLessonPreset {
 }
 
 function getInitialMuralState(): MuralData {
-  const now = new Date();
-  const year = now.getFullYear();
-  const monthIndex = now.getMonth();
-  const mesNome = MESES_NOMES[monthIndex] || 'Outubro';
-  const currentLesson = getCurrentWeekLesson();
-
-  const defaultExisting: MuralDiscursanteDom[] = [
-    { data: '', nomes: 'Conferência Geral' },
-    { data: '', nomes: 'Testemunhos' },
-    { data: '', nomes: 'Rebeca\nSister\nBruno Almeida' },
-    { data: '', nomes: 'Camila Bueno\nCarlos Fagundes\nIvan da Rosa' },
-    { data: '', nomes: 'Discursantes da Ala' },
-  ];
-
-  const discursantes = buildDiscursantesForMonth(year, monthIndex, defaultExisting);
-  const lastSunday = discursantes[discursantes.length - 1]?.data.replace('DIA ', '') || '25/10';
-  const yy = String(year).slice(-2);
-
   return {
-    dataTopo: `${lastSunday}/${yy}`,
+    dataTopo: '06/09/26',
     alaTitulo: 'BOSQUE SAGRADO',
-    institutoTexto: 'Sábados as 18h na Capela Bosque\nSabado às 19h na capela do Centro.',
+    logoUrl: '',
+    institutoTexto: 'Sábados as 18h\nna Capela Bosque\nSexta as às 18h na capela\ndo Centro',
     seminarioTexto: 'Terças e quintas às 18h',
-    mesAlmoco: mesNome,
+    mesAlmoco: 'Setembro',
+    mostrarMesAlmoco: false,
     almocoSisteres: [
-      { dia: 'Dia 25', diaSemana: 'Domingo', responsavel: 'Leonardo e Angela', destaque: true },
-      { dia: 'Dia 26', diaSemana: 'Segunda', responsavel: 'Pday', destaque: false },
-      { dia: 'Dia 27', diaSemana: 'Terça', responsavel: 'Bruna', destaque: false },
-      { dia: 'Dia 28', diaSemana: 'Quarta', responsavel: 'Rebeca', destaque: false },
+      { dia: 'Dia 07', diaSemana: 'Segunda', responsavel: 'P-Day', destaque: true },
+      { dia: 'Dia 08', diaSemana: 'Terça', responsavel: 'Francelys', destaque: false },
+      { dia: 'Dia 09', diaSemana: 'Quarta', responsavel: 'Lúcia', destaque: false },
+      { dia: 'Dia 10', diaSemana: 'Quinta', responsavel: 'Suzana', destaque: false },
+      { dia: 'Dia 11', diaSemana: 'Sexta', responsavel: 'Ruth', destaque: false },
+      { dia: 'Dia 12', diaSemana: 'Sábado', responsavel: 'Soeli', destaque: false },
+      { dia: 'Dia 13', diaSemana: 'Domingo', responsavel: 'Rosane Flores', destaque: false },
     ],
-    discursantes,
+    discursantes: [
+      { data: 'DIA 06/09', nomes: 'Testemunhos' },
+      { data: 'DIA 13/09', nomes: 'Rebeca\nSister\nBruno Almeida' },
+      { data: 'DIA 20/09', nomes: 'Conferência da Ala' },
+      { data: 'DIA 27/09', nomes: 'Camila Bueno\nLeonardo Godinho\n--------------------' },
+    ],
+    modoLimpeza: 'ala_unica',
+    limpezaAlaUnica: 'Ala Planaltina',
     limpezaCapela: [
       { responsavel: 'Mariano', local: 'Salão Cultural' },
       { responsavel: '--------', local: 'Salas' },
@@ -295,9 +426,9 @@ function getInitialMuralState(): MuralData {
     ],
     paoSacramento: 'Irmã Soeli',
     estudoSemana: {
-      periodo: currentLesson.periodo,
-      escrituras: currentLesson.escrituras,
-      tema: currentLesson.tema,
+      periodo: '7 a 13 de setembro',
+      escrituras: 'Provérbios 1–4; 15–16; 22; 31; Eclesiastes 1–3; 11–12.',
+      tema: '“Ele endireitará as tuas veredas”',
       imagemDataUrl: '',
     },
     anuncios: [
@@ -309,16 +440,17 @@ function getInitialMuralState(): MuralData {
       {
         titulo: 'Curso Educação Para um Emprego Melhor\nTodas as Quartas as 19:30',
         texto: 'Inscrições Abertas!!\ninicio Dia 30 as 19h\nlink para inscrição abaixo:',
-        link: 'https://quickreg.churchofjesuschrist.org/join-now/group/ae3bb12b-cbb9-f111-aaaf-3833c5f09f2f',
+        link: 'https://quickreg.churchofjesuschrist.org',
       },
     ],
+    mostrarAnuncios: false,
   };
 }
 
 type SectionTab = 'almoco' | 'discursantes' | 'limpeza' | 'estudo' | 'extras';
 
 export const Mural: React.FC = () => {
-  const { canWrite } = useAuth();
+  const { canWrite, user } = useAuth();
   const [mural, setMural] = useState<MuralData>(getInitialMuralState);
   const [members, setMembers] = useState<Membro[]>([]);
   const [activeTab, setActiveTab] = useState<SectionTab>('almoco');
@@ -327,33 +459,53 @@ export const Mural: React.FC = () => {
   const [statusMsg, setStatusMsg] = useState<string>('');
   const posterRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadInitialData();
   }, []);
 
-  function normalizeMuralSundays(raw: MuralData): MuralData {
+  function normalizeMuralData(raw: MuralData): MuralData {
     const { year, monthIndex } = resolveYearAndMonth(raw.dataTopo, raw.mesAlmoco);
+    const refDate = parseDateFromTopo(raw.dataTopo) || new Date();
     return {
       ...raw,
       mesAlmoco: MESES_NOMES[monthIndex] || raw.mesAlmoco,
       discursantes: buildDiscursantesForMonth(year, monthIndex, raw.discursantes || []),
+      almocoSisteres: normalizeAlmocoSisteres(raw.almocoSisteres, refDate),
+      modoLimpeza: raw.modoLimpeza || (raw.limpezaAlaUnica ? 'ala_unica' : 'setores'),
+      limpezaAlaUnica: raw.limpezaAlaUnica || 'Ala Planaltina',
+      mostrarMesAlmoco: raw.mostrarMesAlmoco !== undefined ? raw.mostrarMesAlmoco : false,
+      mostrarAnuncios: raw.mostrarAnuncios !== undefined ? raw.mostrarAnuncios : false,
     };
   }
 
-  async function loadInitialData() {
+  async function loadInitialData(isManualReload = false) {
     try {
       const [muralRes, membersRes] = await Promise.all([
-        api.get<MuralData>('/mural').catch(() => null),
+        api.get<MuralData>('/mural').catch(err => {
+          console.warn('Não foi possível obter mural do servidor:', err);
+          return null;
+        }),
         api.get<{ members: Membro[] }>('/membros').catch(() => ({ members: [] })),
       ]);
       if (muralRes && muralRes.almocoSisteres) {
-        setMural(normalizeMuralSundays(muralRes));
+        const normalized = normalizeMuralData(muralRes);
+        setMural(normalized);
+        try {
+          localStorage.setItem('lcr2_mural_draft', JSON.stringify(normalized));
+        } catch {
+          // ignore storage quota error
+        }
+        if (isManualReload) {
+          setStatusMsg('Mural recarregado do Firebase com sucesso!');
+          setTimeout(() => setStatusMsg(''), 3500);
+        }
       } else {
         const savedLocal = localStorage.getItem('lcr2_mural_draft');
         if (savedLocal) {
           try {
-            setMural(normalizeMuralSundays(JSON.parse(savedLocal)));
+            setMural(normalizeMuralData(JSON.parse(savedLocal)));
           } catch {
             // keep default
           }
@@ -391,13 +543,47 @@ export const Mural: React.FC = () => {
         return { ...prev, dataTopo: newDataTopo };
       }
 
+      const topoDate = parseDateFromTopo(newDataTopo);
+      const updatedAlmoco = topoDate
+        ? buildCurrentWeekAlmoco(topoDate, prev.almocoSisteres)
+        : prev.almocoSisteres;
+
       return {
         ...prev,
         dataTopo: newDataTopo,
         mesAlmoco: MESES_NOMES[monthIndex],
         discursantes: buildDiscursantesForMonth(year, monthIndex, prev.discursantes),
+        almocoSisteres: updatedAlmoco,
       };
     });
+  }
+
+  function handleFillCurrentWeekAlmoco() {
+    const today = new Date();
+    const sunday = getSundayOfWeek(today);
+    const sundayDd = String(sunday.getDate()).padStart(2, '0');
+    const sundayMm = String(sunday.getMonth() + 1).padStart(2, '0');
+    const yy = String(sunday.getFullYear()).slice(-2);
+    const newSundayTopo = `${sundayDd}/${sundayMm}/${yy}`;
+    const newMes = MESES_NOMES[sunday.getMonth()];
+
+    updateMural(prev => {
+      const { year, monthIndex } = resolveYearAndMonth(newSundayTopo, newMes);
+      // Garante que Segunda (P-Day) tenha destaque (faixa) ativo por padrão
+      const baseExisting = prev.almocoSisteres.map((item, idx) => {
+        if (idx === 0) return { ...item, destaque: true };
+        return item;
+      });
+      return {
+        ...prev,
+        dataTopo: newSundayTopo,
+        mesAlmoco: newMes,
+        almocoSisteres: buildCurrentWeekAlmoco(today, baseExisting),
+        discursantes: buildDiscursantesForMonth(year, monthIndex, prev.discursantes),
+      };
+    });
+    setStatusMsg('Almoço das Sisteres preenchido para a semana atual (P-Day com faixa)!');
+    setTimeout(() => setStatusMsg(''), 3500);
   }
 
   function handleMonthChange(newMesNome: string) {
@@ -421,15 +607,28 @@ export const Mural: React.FC = () => {
   }
 
   async function handleSaveServer() {
-    if (!canWrite) return;
+    if (user && canWrite === false) {
+      alert('Seu perfil de usuário não tem permissão para salvar alterações no mural.');
+      return;
+    }
     setSaving(true);
     setStatusMsg('');
     try {
-      await api.put('/mural', mural);
-      setStatusMsg('Mural salvo com sucesso!');
-      setTimeout(() => setStatusMsg(''), 3500);
+      const saved = await api.put<MuralData>('/mural', mural);
+      if (saved) {
+        const normalized = normalizeMuralData(saved);
+        setMural(normalized);
+        try {
+          localStorage.setItem('lcr2_mural_draft', JSON.stringify(normalized));
+        } catch {
+          // ignore quota
+        }
+      }
+      setStatusMsg('Mural salvo com sucesso no Firebase!');
+      setTimeout(() => setStatusMsg(''), 4000);
     } catch (err: any) {
-      alert(err.message || 'Erro ao salvar mural no servidor.');
+      console.error('Erro ao salvar mural no Firebase:', err);
+      alert(err.message || 'Erro ao salvar mural no Firebase.');
     } finally {
       setSaving(false);
     }
@@ -447,6 +646,20 @@ export const Mural: React.FC = () => {
           ...prev.estudoSemana,
           imagemDataUrl: result,
         },
+      }));
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      updateMural(prev => ({
+        ...prev,
+        logoUrl: result,
       }));
     };
     reader.readAsDataURL(file);
@@ -516,11 +729,23 @@ export const Mural: React.FC = () => {
               ✓ {statusMsg}
             </span>
           )}
-          {canWrite && (
-            <button type="button" className="btn btn-secondary" onClick={handleSaveServer} disabled={saving}>
-              {saving ? 'Salvando…' : '💾 Salvar Dados'}
-            </button>
-          )}
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => loadInitialData(true)}
+            title="Recarregar os dados mais recentes gravados no Firebase"
+          >
+            🔄 Recarregar
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={handleSaveServer}
+            disabled={saving}
+            title="Salvar alterações no banco de dados Firebase"
+          >
+            {saving ? 'Salvando no Firebase…' : '💾 Salvar no Firebase'}
+          </button>
           <button type="button" className="btn pri" onClick={handleDownloadPng} disabled={exporting}>
             {exporting ? 'Gerando imagem…' : '⬇️ Baixar Imagem (PNG)'}
           </button>
@@ -610,26 +835,67 @@ export const Mural: React.FC = () => {
           {/* ABA 1: ALMOÇO DAS SISTERES */}
           {activeTab === 'almoco' && (
             <section className="card stack">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                 <div>
                   <h3>Almoço das Sisteres</h3>
                   <p className="sub">Defina os dias da semana e as famílias responsáveis pelo almoço das missionárias.</p>
                 </div>
-                <button
-                  type="button"
-                  className="btn ghost sm"
-                  onClick={() =>
-                    updateMural(p => ({
-                      ...p,
-                      almocoSisteres: [
-                        ...p.almocoSisteres,
-                        { dia: 'Dia ', diaSemana: 'Quinta', responsavel: '', destaque: false },
-                      ],
-                    }))
-                  }
-                >
-                  + Adicionar dia
-                </button>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary sm"
+                    onClick={handleFillCurrentWeekAlmoco}
+                    title="Preenche automaticamente os 7 dias da semana atual (Segunda a Domingo, com Segunda como Pday)"
+                  >
+                    📅 Preencher Semana Atual
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    onClick={() =>
+                      updateMural(p => ({
+                        ...p,
+                        almocoSisteres: [
+                          ...p.almocoSisteres,
+                          { dia: 'Dia ', diaSemana: 'Quinta', responsavel: '', destaque: false },
+                        ],
+                      }))
+                    }
+                  >
+                    + Adicionar dia
+                  </button>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  background: 'var(--color-primary-light)',
+                  border: '1px solid var(--color-border)',
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                }}
+              >
+                <div style={{ fontSize: '0.85rem' }}>
+                  <strong>Semana Completa (Segunda a Domingo):</strong> Segunda-feira é o 1º dia como <em>P-Day</em>.
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(mural.mostrarMesAlmoco)}
+                      onChange={e => updateMural(p => ({ ...p, mostrarMesAlmoco: e.target.checked }))}
+                    />
+                    Exibir mês no cartaz ({mural.mesAlmoco})
+                  </label>
+                  <span className="badge badge-info">
+                    {mural.almocoSisteres.length} dias configurados
+                  </span>
+                </div>
               </div>
 
               <div className="stack" style={{ gap: 10 }}>
@@ -654,7 +920,7 @@ export const Mural: React.FC = () => {
                           return { ...p, almocoSisteres: list };
                         });
                       }}
-                      placeholder="Ex.: Dia 27"
+                      placeholder="Ex.: Dia 19"
                     />
                     <input
                       className="inp"
@@ -667,7 +933,7 @@ export const Mural: React.FC = () => {
                           return { ...p, almocoSisteres: list };
                         });
                       }}
-                      placeholder="Ex.: Domingo"
+                      placeholder="Ex.: Segunda"
                     />
                     <input
                       className="inp"
@@ -805,79 +1071,153 @@ export const Mural: React.FC = () => {
           {/* ABA 3: LIMPEZA DA CAPELA & PÃO DO SACRAMENTO */}
           {activeTab === 'limpeza' && (
             <section className="card stack">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                 <div>
                   <h3>Limpeza da Capela & Pão do Sacramento</h3>
-                  <p className="sub">Informe o responsável à esquerda e o setor da capela à direita.</p>
+                  <p className="sub">
+                    Defina se a limpeza é realizada por uma Ala inteira (ex: <b>Ala Planaltina</b>) ou dividida por setores.
+                  </p>
                 </div>
-                <button
-                  type="button"
-                  className="btn ghost sm"
-                  onClick={() =>
-                    updateMural(p => ({
-                      ...p,
-                      limpezaCapela: [...p.limpezaCapela, { responsavel: '', local: '' }],
-                    }))
-                  }
-                >
-                  + Adicionar setor
-                </button>
               </div>
 
-              <div className="stack" style={{ gap: 8 }}>
-                {mural.limpezaCapela.map((item, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr auto',
-                      gap: 8,
-                      alignItems: 'center',
-                    }}
-                  >
+              {/* Seletor de Modo de Limpeza */}
+              <div
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: 8,
+                  background: 'var(--color-primary-light)',
+                  border: '1px solid var(--color-border)',
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, cursor: 'pointer' }}>
                     <input
-                      className="inp"
-                      list="mural-membros-list"
-                      value={item.responsavel}
-                      onChange={e => {
-                        const val = e.target.value;
-                        updateMural(p => {
-                          const list = [...p.limpezaCapela];
-                          list[idx] = { ...list[idx], responsavel: val };
-                          return { ...p, limpezaCapela: list };
-                        });
-                      }}
-                      placeholder="Responsável (ex.: Mariano ou --------)"
+                      type="radio"
+                      name="modoLimpeza"
+                      value="ala_unica"
+                      checked={mural.modoLimpeza === 'ala_unica'}
+                      onChange={() => updateMural(p => ({ ...p, modoLimpeza: 'ala_unica' }))}
                     />
+                    🏛️ Ala Única / Responsável Geral
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, cursor: 'pointer' }}>
                     <input
-                      className="inp"
-                      value={item.local}
-                      onChange={e => {
-                        const val = e.target.value;
-                        updateMural(p => {
-                          const list = [...p.limpezaCapela];
-                          list[idx] = { ...list[idx], local: val };
-                          return { ...p, limpezaCapela: list };
-                        });
-                      }}
-                      placeholder="Setor (ex.: Salão Cultural)"
+                      type="radio"
+                      name="modoLimpeza"
+                      value="setores"
+                      checked={mural.modoLimpeza !== 'ala_unica'}
+                      onChange={() => updateMural(p => ({ ...p, modoLimpeza: 'setores' }))}
                     />
-                    <button
-                      type="button"
-                      className="btn ghost danger sm"
-                      onClick={() =>
-                        updateMural(p => ({
-                          ...p,
-                          limpezaCapela: p.limpezaCapela.filter((_, i) => i !== idx),
-                        }))
-                      }
-                      title="Remover setor"
-                    >
-                      ✕
-                    </button>
+                    🧹 Por Setores Detalhados
+                  </label>
+                </div>
+
+                {mural.modoLimpeza === 'ala_unica' ? (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {['Ala Planaltina', 'Ala Bosque Sagrado', 'Ala Centro'].map(preset => (
+                      <button
+                        key={preset}
+                        type="button"
+                        className="chip sm"
+                        onClick={() => updateMural(p => ({ ...p, limpezaAlaUnica: preset }))}
+                      >
+                        {preset}
+                      </button>
+                    ))}
                   </div>
-                ))}
+                ) : (
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    onClick={() =>
+                      updateMural(p => ({
+                        ...p,
+                        limpezaCapela: [...p.limpezaCapela, { responsavel: '', local: '' }],
+                      }))
+                    }
+                  >
+                    + Adicionar setor
+                  </button>
+                )}
               </div>
+
+              {/* MODO ALA ÚNICA */}
+              {mural.modoLimpeza === 'ala_unica' ? (
+                <div className="field" style={{ marginTop: 8 }}>
+                  <label>Ala ou Responsável Geral pela Limpeza</label>
+                  <input
+                    className="inp"
+                    value={mural.limpezaAlaUnica || ''}
+                    onChange={e => updateMural(p => ({ ...p, limpezaAlaUnica: e.target.value }))}
+                    placeholder="Ex.: Ala Planaltina"
+                    style={{ fontSize: '1.05rem', fontWeight: 700 }}
+                  />
+                  <small style={{ color: 'var(--color-text-muted)', display: 'block', marginTop: 4 }}>
+                    No cartaz, o nome será exibido centralizado com destaque abaixo de "Limpeza da Capela", exatamente como no modelo (ex.: <em>Ala Planaltina</em>).
+                  </small>
+                </div>
+              ) : (
+                /* MODO POR SETORES */
+                <div className="stack" style={{ gap: 8, marginTop: 8 }}>
+                  {mural.limpezaCapela.map((item, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr auto',
+                        gap: 8,
+                        alignItems: 'center',
+                      }}
+                    >
+                      <input
+                        className="inp"
+                        list="mural-membros-list"
+                        value={item.responsavel}
+                        onChange={e => {
+                          const val = e.target.value;
+                          updateMural(p => {
+                            const list = [...p.limpezaCapela];
+                            list[idx] = { ...list[idx], responsavel: val };
+                            return { ...p, limpezaCapela: list };
+                          });
+                        }}
+                        placeholder="Responsável (ex.: Mariano ou --------)"
+                      />
+                      <input
+                        className="inp"
+                        value={item.local}
+                        onChange={e => {
+                          const val = e.target.value;
+                          updateMural(p => {
+                            const list = [...p.limpezaCapela];
+                            list[idx] = { ...list[idx], local: val };
+                            return { ...p, limpezaCapela: list };
+                          });
+                        }}
+                        placeholder="Setor (ex.: Salão Cultural)"
+                      />
+                      <button
+                        type="button"
+                        className="btn ghost danger sm"
+                        onClick={() =>
+                          updateMural(p => ({
+                            ...p,
+                            limpezaCapela: p.limpezaCapela.filter((_, i) => i !== idx),
+                          }))
+                        }
+                        title="Remover setor"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="field" style={{ marginTop: 8, paddingTop: 12, borderTop: '1px solid var(--color-border)' }}>
                 <label>🍞 Responsável pelo Pão do Sacramento</label>
@@ -1034,8 +1374,42 @@ export const Mural: React.FC = () => {
           {activeTab === 'extras' && (
             <section className="card stack">
               <div>
-                <h3>Cabeçalho (Instituto / Seminário) & Anúncios</h3>
-                <p className="sub">Ajuste os horários fixos do topo ou os anúncios do rodapé do cartaz.</p>
+                <h3>Cabeçalho (Logotipo / Instituto / Seminário) & Anúncios</h3>
+                <p className="sub">Ajuste os horários fixos do topo, o logotipo oficial ou os anúncios do rodapé do cartaz.</p>
+              </div>
+
+              <div className="field">
+                <label>Logotipo Oficial do Topo (Faixa Bosque Sagrado)</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                  <img
+                    src={mural.logoUrl || logoBosqueSagrado}
+                    alt="Logo Bosque Sagrado"
+                    style={{ height: 44, objectFit: 'contain', background: '#f5f5f4', padding: '4px 10px', borderRadius: 6, border: '1px solid var(--color-border)' }}
+                  />
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleLogoUpload}
+                    className="inp"
+                    style={{ maxWidth: 280 }}
+                  />
+                  {mural.logoUrl && (
+                    <button
+                      type="button"
+                      className="btn ghost sm"
+                      onClick={() => {
+                        if (logoInputRef.current) logoInputRef.current.value = '';
+                        updateMural(p => ({ ...p, logoUrl: '' }));
+                      }}
+                    >
+                      Restaurar Logo Padrão
+                    </button>
+                  )}
+                </div>
+                <small style={{ color: 'var(--color-text-muted)', display: 'block', marginTop: 4 }}>
+                  O logotipo esculpido oficial da Ala Bosque Sagrado já está configurado por padrão.
+                </small>
               </div>
 
               <div className="two">
@@ -1043,7 +1417,7 @@ export const Mural: React.FC = () => {
                   <label>Horários do Instituto</label>
                   <textarea
                     className="inp"
-                    rows={2}
+                    rows={3}
                     value={mural.institutoTexto}
                     onChange={e => updateMural(p => ({ ...p, institutoTexto: e.target.value }))}
                   />
@@ -1052,53 +1426,110 @@ export const Mural: React.FC = () => {
                   <label>Horários do Seminário</label>
                   <textarea
                     className="inp"
-                    rows={2}
+                    rows={3}
                     value={mural.seminarioTexto}
                     onChange={e => updateMural(p => ({ ...p, seminarioTexto: e.target.value }))}
                   />
                 </div>
               </div>
 
-              <div className="two">
-                {mural.anuncios.map((an, idx) => (
-                  <div key={idx} className="stack" style={{ gap: 8 }}>
-                    <div className="field">
-                      <label>Anúncio {idx + 1} — Título</label>
-                      <textarea
-                        className="inp"
-                        rows={2}
-                        value={an.titulo}
-                        onChange={e => {
-                          const val = e.target.value;
-                          updateMural(p => {
-                            const list = [...p.anuncios];
-                            list[idx] = { ...list[idx], titulo: val };
-                            return { ...p, anuncios: list };
-                          });
-                        }}
-                      />
-                    </div>
-                    <div className="field">
-                      <label>Anúncio {idx + 1} — Texto</label>
-                      <textarea
-                        className="inp"
-                        rows={3}
-                        value={an.texto}
-                        onChange={e => {
-                          const val = e.target.value;
-                          updateMural(p => {
-                            const list = [...p.anuncios];
-                            list[idx] = { ...list[idx], texto: val };
-                            return { ...p, anuncios: list };
-                          });
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))}
+              <div className="field" style={{ paddingTop: 10, borderTop: '1px solid var(--color-border)', marginBottom: 6 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.95rem', fontWeight: 700, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={mural.mostrarAnuncios !== false}
+                    onChange={e => updateMural(p => ({ ...p, mostrarAnuncios: e.target.checked }))}
+                  />
+                  📢 Exibir rodapé de Anúncios no Cartaz
+                </label>
+                <small style={{ color: 'var(--color-text-muted)' }}>
+                  Desmarque para ocultar a seção de anúncios no rodapé (como no modelo sem anúncios).
+                </small>
               </div>
+
+              {mural.mostrarAnuncios !== false && (
+                <div className="two">
+                  {mural.anuncios.map((an, idx) => (
+                    <div key={idx} className="stack" style={{ gap: 8 }}>
+                      <div className="field">
+                        <label>Anúncio {idx + 1} — Título</label>
+                        <textarea
+                          className="inp"
+                          rows={2}
+                          value={an.titulo}
+                          onChange={e => {
+                            const val = e.target.value;
+                            updateMural(p => {
+                              const list = [...p.anuncios];
+                              list[idx] = { ...list[idx], titulo: val };
+                              return { ...p, anuncios: list };
+                            });
+                          }}
+                        />
+                      </div>
+                      <div className="field">
+                        <label>Anúncio {idx + 1} — Texto</label>
+                        <textarea
+                          className="inp"
+                          rows={3}
+                          value={an.texto}
+                          onChange={e => {
+                            const val = e.target.value;
+                            updateMural(p => {
+                              const list = [...p.anuncios];
+                              list[idx] = { ...list[idx], texto: val };
+                              return { ...p, anuncios: list };
+                            });
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
           )}
+
+          {/* BARRA DE AÇÕES INFERIOR */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '12px 16px',
+              borderRadius: 8,
+              background: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              flexWrap: 'wrap',
+              gap: 10,
+            }}
+          >
+            <div style={{ fontSize: '0.88rem', color: 'var(--color-text-muted)' }}>
+              {statusMsg ? (
+                <span className="badge badge-success">✓ {statusMsg}</span>
+              ) : (
+                <span>As alterações são sincronizadas com o Firebase ao clicar em Salvar.</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleSaveServer}
+                disabled={saving}
+              >
+                {saving ? 'Salvando no Firebase…' : '💾 Salvar no Firebase'}
+              </button>
+              <button
+                type="button"
+                className="btn pri"
+                onClick={handleDownloadPng}
+                disabled={exporting}
+              >
+                {exporting ? 'Gerando…' : '⬇️ Baixar Imagem'}
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* COLUNA DIREITA: Pequeno Preview Ao Vivo */}
@@ -1136,9 +1567,11 @@ export const Mural: React.FC = () => {
                   <div className="mural-poster-header">
                     <div className="mural-poster-date">{mural.dataTopo}</div>
                     <div className="mural-banner-wrap">
-                      <div className="mural-stone-ribbon">
-                        <span>{mural.alaTitulo || 'BOSQUE SAGRADO'}</span>
-                      </div>
+                      <img
+                        src={mural.logoUrl || logoBosqueSagrado}
+                        alt={mural.alaTitulo || 'BOSQUE SAGRADO'}
+                        className="mural-banner-img"
+                      />
                     </div>
 
                     <div className="mural-inst-sem-row">
@@ -1167,9 +1600,11 @@ export const Mural: React.FC = () => {
                         <div className="mural-yellow-title" style={{ fontSize: 21 }}>
                           Almoço das Sisteres
                         </div>
-                        <div className="mural-yellow-title" style={{ fontSize: 15, marginTop: 1 }}>
-                          {mural.mesAlmoco}
-                        </div>
+                        {mural.mostrarMesAlmoco && mural.mesAlmoco && (
+                          <div className="mural-yellow-title" style={{ fontSize: 15, marginTop: 1 }}>
+                            {mural.mesAlmoco}
+                          </div>
+                        )}
                       </div>
 
                       <div className="mural-almoco-list">
@@ -1180,7 +1615,9 @@ export const Mural: React.FC = () => {
                           >
                             <div>• {row.dia}</div>
                             <div style={{ textAlign: 'center' }}>{row.diaSemana}</div>
-                            <div style={{ textAlign: 'right' }}>{row.responsavel}</div>
+                            <div style={{ textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {row.responsavel || ''}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1229,24 +1666,33 @@ export const Mural: React.FC = () => {
                             Limpeza da Capela
                           </div>
                         </div>
-                        <div className="mural-limpeza-list">
-                          {mural.limpezaCapela.map((l, idx) => (
-                            <div key={idx} className="mural-limpeza-row">
-                              <span className="mural-stroke-white">{l.responsavel}</span>
-                              <span style={{ fontWeight: 800 }}> - </span>
-                              <span className="mural-stroke-cyan">{l.local}</span>
-                            </div>
-                          ))}
-                        </div>
+
+                        {mural.modoLimpeza === 'ala_unica' ? (
+                          <div className="mural-limpeza-ala-unica-box">
+                            <span className="mural-stroke-white" style={{ fontSize: 18, letterSpacing: '0.02em' }}>
+                              {mural.limpezaAlaUnica || 'Ala Planaltina'}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="mural-limpeza-list">
+                            {mural.limpezaCapela.map((l, idx) => (
+                              <div key={idx} className="mural-limpeza-row">
+                                <span className="mural-stroke-white">{l.responsavel}</span>
+                                <span style={{ fontWeight: 800 }}> - </span>
+                                <span className="mural-stroke-cyan">{l.local}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
-                      <div style={{ textAlign: 'center', marginTop: 10 }}>
+                      <div style={{ textAlign: 'center', marginTop: mural.modoLimpeza === 'ala_unica' ? 24 : 10 }}>
                         <div className="mural-yellow-title" style={{ fontSize: 16 }}>
                           Pão do Sacramento
                         </div>
                         <div
                           style={{
-                            fontSize: 12,
+                            fontSize: 13,
                             fontWeight: 900,
                             fontStyle: 'italic',
                             marginTop: 4,
@@ -1304,36 +1750,39 @@ export const Mural: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="mural-divider-h" />
-
-                  {/* RODAPÉ: Anúncios */}
-                  <div className="mural-footer">
-                    <div style={{ textAlign: 'center' }}>
-                      <span className="mural-yellow-title" style={{ fontSize: 14 }}>
-                        Anúncios
-                      </span>
-                    </div>
-                    <div className="mural-anuncios-grid">
-                      {mural.anuncios.map((an, idx) => (
-                        <div key={idx}>
-                          <div style={{ fontWeight: 800, whiteSpace: 'pre-line' }}>• {an.titulo}</div>
-                          <div style={{ marginTop: 2, whiteSpace: 'pre-line' }}>{an.texto}</div>
-                          {an.link && (
-                            <div
-                              style={{
-                                marginTop: 2,
-                                fontSize: 7.5,
-                                wordBreak: 'break-all',
-                                fontWeight: 700,
-                              }}
-                            >
-                              {an.link}
-                            </div>
-                          )}
+                  {/* RODAPÉ: Anúncios (opcional) */}
+                  {mural.mostrarAnuncios && mural.anuncios && mural.anuncios.length > 0 && (
+                    <>
+                      <div className="mural-divider-h" />
+                      <div className="mural-footer">
+                        <div style={{ textAlign: 'center' }}>
+                          <span className="mural-yellow-title" style={{ fontSize: 14 }}>
+                            Anúncios
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  </div>
+                        <div className="mural-anuncios-grid">
+                          {mural.anuncios.map((an, idx) => (
+                            <div key={idx}>
+                              <div style={{ fontWeight: 800, whiteSpace: 'pre-line' }}>• {an.titulo}</div>
+                              <div style={{ marginTop: 2, whiteSpace: 'pre-line' }}>{an.texto}</div>
+                              {an.link && (
+                                <div
+                                  style={{
+                                    marginTop: 2,
+                                    fontSize: 7.5,
+                                    wordBreak: 'break-all',
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  {an.link}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
