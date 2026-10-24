@@ -60,13 +60,132 @@
   padding: 14px;
   display: flex;
   justify-content: center;
-  overflow: hidden;
+  overflow: auto;
+  max-height: calc(100vh - 130px);
 }
 
 .mural-preview-scale-box {
-  width: 378px;
-  height: 532px;
   position: relative;
+  flex-shrink: 0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.mural-preview-clickable {
+  cursor: zoom-in;
+  transition: opacity 0.15s ease;
+}
+
+.mural-preview-clickable:hover {
+  opacity: 0.96;
+}
+
+.mural-preview-overlay-btn {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(18, 18, 18, 0.78);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(4px);
+  padding: 4px 10px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+  z-index: 5;
+}
+
+.mural-preview-overlay-btn:hover {
+  background: rgba(10, 10, 10, 0.95);
+  transform: translateY(-1px);
+}
+
+/* ==========================================================================
+   MODAL DE AMPLIAÇÃO / TELA CHEIA (LIGHTBOX)
+   ========================================================================== */
+
+.mural-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(10, 14, 12, 0.78);
+  backdrop-filter: blur(5px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 20px;
+  overflow-y: auto;
+  animation: muralModalFadeIn 0.18s ease-out;
+}
+
+@keyframes muralModalFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.mural-modal-dialog {
+  background: var(--color-surface, #ffffff);
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  width: 100%;
+  max-width: 860px;
+  display: flex;
+  flex-direction: column;
+  margin: auto;
+  overflow: hidden;
+}
+
+.mural-modal-header {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--color-surface);
+}
+
+.mural-modal-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mural-modal-body {
+  padding: 24px 16px;
+  background: #1c1917;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 480px;
+  max-height: calc(88vh - 70px);
+}
+
+@media (max-width: 640px) {
+  .mural-modal-backdrop {
+    padding: 8px;
+  }
+  .mural-modal-body {
+    padding: 12px 4px;
+    max-height: calc(92vh - 80px);
+  }
 }
 
 /* ==========================================================================
@@ -122,6 +241,7 @@
   object-fit: contain;
   display: block;
   margin: 0 auto;
+  margin-top: -5px;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
 }
 
@@ -156,10 +276,10 @@
   color: #0f0f0f;
   text-shadow:
     -2px -2px 0 #fde047,
-     2px -2px 0 #fde047,
-    -2px  2px 0 #fde047,
-     2px  2px 0 #fde047,
-     0px  0px 6px #facc15;
+    2px -2px 0 #fde047,
+    -2px 2px 0 #fde047,
+    2px 2px 0 #fde047,
+    0px 0px 6px #facc15;
   letter-spacing: 0.03em;
   line-height: 1.15;
 }
@@ -173,10 +293,10 @@
   white-space: pre-line;
   text-shadow:
     -1px -1px 0 #fef08a,
-     1px -1px 0 #fef08a,
-    -1px  1px 0 #fef08a,
-     1px  1px 0 #fef08a,
-     0px  0px 4px #fde047;
+    1px -1px 0 #fef08a,
+    -1px 1px 0 #fef08a,
+    1px 1px 0 #fef08a,
+    0px 0px 4px #fde047;
 }
 
 .mural-divider-h {
