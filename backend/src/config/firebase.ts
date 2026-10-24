@@ -4,6 +4,9 @@ import path from 'path';
 import dotenv from 'dotenv';
 
 dotenv.config();
+if (fs.existsSync(path.resolve(process.cwd(), 'backend', '.env'))) {
+  dotenv.config({ path: path.resolve(process.cwd(), 'backend', '.env') });
+}
 
 let dbInstance: admin.firestore.Firestore | null = null;
 let authInstance: admin.auth.Auth | null = null;

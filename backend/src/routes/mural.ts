@@ -6,23 +6,30 @@ import { MuralData } from '../types/index.js';
 const router = Router();
 
 export const DEFAULT_MURAL_DATA: MuralData = {
-  dataTopo: '25/10/26',
+  dataTopo: '06/09/26',
   alaTitulo: 'BOSQUE SAGRADO',
-  institutoTexto: 'Sábados as 18h na Capela Bosque\nSabado às 19h na capela do Centro.',
+  logoUrl: '',
+  institutoTexto: 'Sábados as 18h\nna Capela Bosque\nSexta as às 18h na capela\ndo Centro',
   seminarioTexto: 'Terças e quintas às 18h',
-  mesAlmoco: 'Outubro',
+  mesAlmoco: 'Setembro',
+  mostrarMesAlmoco: false,
   almocoSisteres: [
-    { dia: 'Dia 25', diaSemana: 'Domingo', responsavel: 'Leonardo e Angela', destaque: true },
-    { dia: 'Dia 26', diaSemana: 'Segunda', responsavel: 'Pday', destaque: false },
-    { dia: 'Dia 27', diaSemana: 'Terça', responsavel: 'Bruna', destaque: false },
-    { dia: 'Dia 28', diaSemana: 'Quarta', responsavel: 'Rebeca', destaque: false },
+    { dia: 'Dia 07', diaSemana: 'Segunda', responsavel: 'P-Day', destaque: true },
+    { dia: 'Dia 08', diaSemana: 'Terça', responsavel: 'Francelys', destaque: false },
+    { dia: 'Dia 09', diaSemana: 'Quarta', responsavel: 'Lúcia', destaque: false },
+    { dia: 'Dia 10', diaSemana: 'Quinta', responsavel: 'Suzana', destaque: false },
+    { dia: 'Dia 11', diaSemana: 'Sexta', responsavel: 'Ruth', destaque: false },
+    { dia: 'Dia 12', diaSemana: 'Sábado', responsavel: 'Soeli', destaque: false },
+    { dia: 'Dia 13', diaSemana: 'Domingo', responsavel: 'Rosane Flores', destaque: false },
   ],
   discursantes: [
-    { data: 'DIA 04/10', nomes: 'Conferência Geral' },
-    { data: 'DIA 11/10', nomes: 'Testemunhos' },
-    { data: 'DIA 18/10', nomes: 'Rebeca\nSister\nBruno Almeida' },
-    { data: 'DIA 25/10', nomes: 'Camila Bueno\nCarlos Fagundes\nIvan da Rosa' },
+    { data: 'DIA 06/09', nomes: 'Testemunhos' },
+    { data: 'DIA 13/09', nomes: 'Rebeca\nSister\nBruno Almeida' },
+    { data: 'DIA 20/09', nomes: 'Conferência da Ala' },
+    { data: 'DIA 27/09', nomes: 'Camila Bueno\nLeonardo Godinho\n--------------------' },
   ],
+  modoLimpeza: 'ala_unica',
+  limpezaAlaUnica: 'Ala Planaltina',
   limpezaCapela: [
     { responsavel: 'Mariano', local: 'Salão Cultural' },
     { responsavel: '--------', local: 'Salas' },
@@ -34,9 +41,9 @@ export const DEFAULT_MURAL_DATA: MuralData = {
   ],
   paoSacramento: 'Irmã Soeli',
   estudoSemana: {
-    periodo: '19 a 25 de outubro',
-    escrituras: 'Jeremias 1–3; 7; 16–18; 20',
-    tema: '“Antes que te formasse no ventre, te conheci”',
+    periodo: '7 a 13 de setembro',
+    escrituras: 'Provérbios 1–4; 15–16; 22; 31; Eclesiastes 1–3; 11–12.',
+    tema: '“Ele endireitará as tuas veredas”',
     imagemDataUrl: '',
   },
   anuncios: [
@@ -51,6 +58,7 @@ export const DEFAULT_MURAL_DATA: MuralData = {
       link: 'https://quickreg.churchofjesuschrist.org',
     },
   ],
+  mostrarAnuncios: false,
 };
 
 router.get('/', authenticate, async (_req, res) => {

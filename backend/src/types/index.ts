@@ -412,14 +412,19 @@ export interface MuralAnuncioItem {
 export interface MuralData {
   dataTopo: string;
   alaTitulo: string;
+  logoUrl?: string;
   institutoTexto: string;
   seminarioTexto: string;
   mesAlmoco: string;
+  mostrarMesAlmoco?: boolean;
   almocoSisteres: MuralAlmocoItem[];
   discursantes: MuralDiscursanteDom[];
+  modoLimpeza?: 'setores' | 'ala_unica';
+  limpezaAlaUnica?: string;
   limpezaCapela: MuralLimpezaItem[];
   paoSacramento: string;
   estudoSemana: MuralEstudoSemana;
   anuncios: MuralAnuncioItem[];
+  mostrarAnuncios?: boolean;
   atualizadoEm?: number;
 }
