@@ -46,7 +46,7 @@ router.get('/', authenticate, async (req, res) => {
     res.json(indicadores);
   } catch (error) {
     console.error('Error fetching indicadores:', error);
-    res.status(500).json({ error: 'Erro ao carregar indicadores.' });
+    res.json(SEED_INDICADORES);
   }
 });
 

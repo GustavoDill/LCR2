@@ -20,29 +20,62 @@ const addDays = (isoDate: string, n: number) => {
 
 const CH_FLOW = ['Indicado', 'Aprovação do bispado', 'Entrevista', 'Apoio na sacramental', 'Designação'];
 
+// In-memory cache to save Firestore read quota and provide instant responses
+let cachedResumoBisp: any = null;
+let lastCacheTimeBisp = 0;
+let cachedResumoCouncil: any = null;
+let lastCacheTimeCouncil = 0;
+const CACHE_TTL_MS = 20 * 1000; // 20 seconds cache
+
+async function safeGetDocs(query: any): Promise<any[]> {
+  try {
+    const snap = await query.get();
+    return snap.docs || [];
+  } catch (err: any) {
+    if (err.code === 8 || err.message?.includes('Quota exceeded')) {
+      console.warn('⚠️ Firestore quota exceeded in dashboard query. Using safe fallback.');
+    } else {
+      console.warn('⚠️ Error in dashboard query:', err.message || err);
+    }
+    return [];
+  }
+}
+
 router.get('/resumo', authenticate, async (req, res) => {
+  const isBisp = req.user?.isBishopric ?? false;
+  const now = Date.now();
+
+  // Serve valid in-memory cache if fresh
+  if (isBisp && cachedResumoBisp && (now - lastCacheTimeBisp < CACHE_TTL_MS)) {
+    res.json(cachedResumoBisp);
+    return;
+  }
+  if (!isBisp && cachedResumoCouncil && (now - lastCacheTimeCouncil < CACHE_TTL_MS)) {
+    res.json(cachedResumoCouncil);
+    return;
+  }
+
   try {
     const db = getDb();
-    const isBisp = req.user?.isBishopric ?? false;
     const today = todayIso();
     const next7 = addDays(today, 7);
     const next30 = addDays(today, 30);
 
-    const [conselhoDesigSnap, conselhoAtasSnap, agendaSnap, atividadesSnap, aprovSnap] = await Promise.all([
-      db.collection('designacoes').get(),
-      db.collection('atas').get(),
-      db.collection('agenda').get(),
-      db.collection('atividades').get(),
-      db.collection('aprovacoes').get(),
+    const [conselhoDesigDocs, conselhoAtasDocs, agendaDocs, atividadesDocs, aprovDocs] = await Promise.all([
+      safeGetDocs(db.collection('designacoes')),
+      safeGetDocs(db.collection('atas')),
+      safeGetDocs(db.collection('agenda')),
+      safeGetDocs(db.collection('atividades')),
+      safeGetDocs(db.collection('aprovacoes')),
     ]);
 
-    const allDesig: Designacao[] = conselhoDesigSnap.docs.map(doc => ({
+    const allDesig: Designacao[] = conselhoDesigDocs.map(doc => ({
       ...doc.data(),
       id: doc.id,
       origem: 'conselho',
     })) as Designacao[];
 
-    const allAtas: Ata[] = conselhoAtasSnap.docs.map(doc => ({
+    const allAtas: Ata[] = conselhoAtasDocs.map(doc => ({
       ...doc.data(),
       id: doc.id,
       tipo: 'conselho',
@@ -50,21 +83,21 @@ router.get('/resumo', authenticate, async (req, res) => {
 
     let pessoas: Pessoa[] = [];
     if (isBisp) {
-      const [bispDesigSnap, bispAtasSnap, pessoasSnap] = await Promise.all([
-        db.collection('conf/b/designacoes').get(),
-        db.collection('conf/b/atas').get(),
-        db.collection('conf/b/pessoas').get(),
+      const [bispDesigDocs, bispAtasDocs, pessoasDocs] = await Promise.all([
+        safeGetDocs(db.collection('conf/b/designacoes')),
+        safeGetDocs(db.collection('conf/b/atas')),
+        safeGetDocs(db.collection('conf/b/pessoas')),
       ]);
 
-      bispDesigSnap.docs.forEach(doc => {
+      bispDesigDocs.forEach(doc => {
         allDesig.push({ ...doc.data(), id: doc.id, origem: 'bispado' } as Designacao);
       });
 
-      bispAtasSnap.docs.forEach(doc => {
+      bispAtasDocs.forEach(doc => {
         allAtas.push({ ...doc.data(), id: doc.id, tipo: 'bispado' } as Ata);
       });
 
-      pessoas = pessoasSnap.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Pessoa[];
+      pessoas = pessoasDocs.map(doc => ({ ...doc.data(), id: doc.id })) as Pessoa[];
     }
 
     const openTasks = allDesig.filter(d => d.status !== 'concluida');
@@ -72,13 +105,13 @@ router.get('/resumo', authenticate, async (req, res) => {
     const weekTasks = openTasks.filter(d => d.prazo && d.prazo >= today && d.prazo <= next7);
 
     // Agenda events
-    const allEvents: AgendaEvento[] = agendaSnap.docs.map(doc => ({
+    const allEvents: AgendaEvento[] = agendaDocs.map(doc => ({
       ...doc.data(),
       id: doc.id,
     })) as AgendaEvento[];
 
-    const events30 = allEvents.filter(e => e.data >= today && e.data <= next30);
-    const events7 = events30.filter(e => e.data <= next7);
+    const events30 = allEvents.filter(e => e.data && e.data >= today && e.data <= next30);
+    const events7 = events30.filter(e => e.data && e.data <= next7);
 
     // Live and last meeting
     const liveMeetings = allAtas.filter(a => a.status === 'aberta');
@@ -89,11 +122,11 @@ router.get('/resumo', authenticate, async (req, res) => {
 
     // Atividades aguardando
     const aprovMap: Record<string, string> = {};
-    aprovSnap.docs.forEach(d => {
+    aprovDocs.forEach(d => {
       aprovMap[d.id] = d.data().status;
     });
 
-    const pendingAtividadesCount = atividadesSnap.docs.filter(doc => {
+    const pendingAtividadesCount = atividadesDocs.filter(doc => {
       const st = aprovMap[doc.id] || 'aguardando';
       return st === 'aguardando';
     }).length;
@@ -113,7 +146,7 @@ router.get('/resumo', authenticate, async (req, res) => {
       }).length;
     });
 
-    res.json({
+    const result = {
       openTasksCount: openTasks.length,
       lateTasksCount: lateTasks.length,
       events30Count: events30.length,
@@ -134,10 +167,39 @@ router.get('/resumo', authenticate, async (req, res) => {
         : null,
       pessoasAcompanhamentoCount: isBisp ? pessoas.filter(p => p.status !== 'concluido').length : null,
       pessoasVencidasCount: isBisp ? pessoas.filter(p => p.status !== 'concluido' && p.prazo && p.prazo < today).length : null,
-    });
+    };
+
+    if (isBisp) {
+      cachedResumoBisp = result;
+      lastCacheTimeBisp = now;
+    } else {
+      cachedResumoCouncil = result;
+      lastCacheTimeCouncil = now;
+    }
+
+    res.json(result);
   } catch (error) {
     console.error('Error fetching dashboard summary:', error);
-    res.status(500).json({ error: 'Erro ao carregar resumo do painel.' });
+    const fallback = isBisp ? cachedResumoBisp : cachedResumoCouncil;
+    if (fallback) {
+      res.json(fallback);
+      return;
+    }
+
+    res.json({
+      openTasksCount: 0,
+      lateTasksCount: 0,
+      events30Count: 0,
+      events7Count: 0,
+      events7: [],
+      attentionTasks: [],
+      liveMeetings: [],
+      lastAta: null,
+      pendingAtividadesCount: 0,
+      chamados: null,
+      pessoasAcompanhamentoCount: null,
+      pessoasVencidasCount: null,
+    });
   }
 });
 

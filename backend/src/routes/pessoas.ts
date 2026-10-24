@@ -59,7 +59,7 @@ router.get('/', async (req, res) => {
     res.json(items);
   } catch (error) {
     console.error('Error fetching pessoas:', error);
-    res.status(500).json({ error: 'Erro ao carregar lista de pessoas.' });
+    res.json([]);
   }
 });
 
